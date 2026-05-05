@@ -108,7 +108,7 @@ export default function AppHome() {
       {/* Notifica posto libero */}
       {freeLesson && (
         <div
-          onClick={() => router.push(`/app/lezioni`)}
+          onClick={() => router.push(`/player/lezioni`)}
           style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.25)', borderRadius: '14px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
           <div style={{ fontSize: '22px' }}>🔔</div>
           <div style={{ flex: 1 }}>
@@ -159,7 +159,7 @@ export default function AppHome() {
           <div style={{ fontSize: '36px', marginBottom: '12px' }}>🎾</div>
           <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '6px' }}>Nessuna lezione prenotata</div>
           <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '20px' }}>Prenota la tua prossima lezione</div>
-          <button onClick={() => router.push('/app/lezioni')}
+          <button onClick={() => router.push('/player/lezioni')}
             style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '12px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
             Vedi lezioni disponibili
           </button>
@@ -175,7 +175,7 @@ export default function AppHome() {
           { icon: '📅', label: 'Prenota lezione',  path: '/player/lezioni',      color: '#c8f53a', text: '#0e1117' },
           { icon: '🎾', label: 'Le mie lezioni',   path: '/player/mie-lezioni',  color: '#1e2535', text: '#fff' },
         ].map(item => (
-          <div key={item.path} onClick={() => router.push(item.path)}
+          <div key={item.path} onClick={() => (item.path)}
             style={{ background: item.color, borderRadius: '14px', padding: '18px 16px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ fontSize: '24px', marginBottom: '8px' }}>{item.icon}</div>
             <div style={{ fontSize: '14px', fontWeight: '700', color: item.text }}>{item.label}</div>
