@@ -136,6 +136,7 @@ export default function LezioniPage() {
   }
 
   async function handleSave() {
+    console.log('Form data:', form)
     if (!form.title || !form.court || !form.date || !form.time || !form.club_id) {
       setError('Compila tutti i campi obbligatori'); return
     }
