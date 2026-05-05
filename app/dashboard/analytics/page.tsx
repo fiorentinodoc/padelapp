@@ -14,8 +14,16 @@ export default function AnalyticsPage() {
     byLevel: { beginner: 0, intermediate: 0, advanced: 0 }
   })
   const [loading, setLoading] = useState(true)
+  const [isMobile, setIsMobile] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+
+  useEffect(() => {
+    function checkMobile() { setIsMobile(window.innerWidth < 768) }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   useEffect(() => { loadData() }, [])
 
@@ -64,7 +72,6 @@ export default function AnalyticsPage() {
         advanced:     advanced ?? 0,
       }
     })
-
     setLoading(false)
   }
 
@@ -81,32 +88,34 @@ export default function AnalyticsPage() {
   )
 
   return (
-    <div style={{ padding: '32px', fontFamily: 'system-ui', color: '#fff' }}>
+    <div style={{ padding: isMobile ? '20px 16px' : '32px', fontFamily: 'system-ui', color: '#fff' }}>
 
-      <div style={{ marginBottom: '28px' }}>
+      <div style={{ marginBottom: '24px' }}>
         <div style={{ fontSize: '22px', fontWeight: '800' }}>Analytics</div>
         <div style={{ fontSize: '13px', color: '#5a5a6a', marginTop: '4px' }}>Panoramica del tuo club</div>
       </div>
 
-      {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '28px' }}>
+      {/* KPI — 2 colonne su mobile, 4 su desktop */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
         {[
           { label: 'Alunni totali',  value: stats.totalStudents,  color: '#c8f53a', icon: '👥' },
           { label: 'Alunni attivi',  value: stats.activeStudents, color: '#5b7fff', icon: '✅' },
           { label: 'Lezioni attive', value: stats.totalLessons,   color: '#38c97a', icon: '📅' },
           { label: 'Tasso presenze', value: `${presenceRate}%`,   color: '#f5a623', icon: '📊' },
         ].map((kpi, i) => (
-          <div key={i} style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderTop: `3px solid ${kpi.color}`, borderRadius: '14px', padding: '20px' }}>
-            <div style={{ fontSize: '22px', marginBottom: '8px' }}>{kpi.icon}</div>
-            <div style={{ fontSize: '26px', fontWeight: '800', color: kpi.color, lineHeight: 1 }}>{kpi.value}</div>
-            <div style={{ fontSize: '12px', color: '#5a5a6a', marginTop: '4px' }}>{kpi.label}</div>
+          <div key={i} style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderTop: `3px solid ${kpi.color}`, borderRadius: '14px', padding: '16px' }}>
+            <div style={{ fontSize: '20px', marginBottom: '8px' }}>{kpi.icon}</div>
+            <div style={{ fontSize: isMobile ? '22px' : '26px', fontWeight: '800', color: kpi.color, lineHeight: 1 }}>{kpi.value}</div>
+            <div style={{ fontSize: '11px', color: '#5a5a6a', marginTop: '4px' }}>{kpi.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Distribuzione livelli */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', maxWidth: '800px' }}>
-        <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '24px' }}>
+      {/* Grafici — colonna singola su mobile, due colonne su desktop */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
+
+        {/* Distribuzione livelli */}
+        <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px' }}>
           <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '20px' }}>Distribuzione per livello</div>
           {[
             { label: 'Principianti', value: stats.byLevel.beginner,    color: '#f5a623' },
@@ -114,24 +123,24 @@ export default function AnalyticsPage() {
             { label: 'Avanzati',     value: stats.byLevel.advanced,     color: '#38c97a' },
           ].map(item => (
             <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
-              <div style={{ fontSize: '13px', color: '#8b93a8', width: '100px', flexShrink: 0 }}>{item.label}</div>
+              <div style={{ fontSize: '13px', color: '#8b93a8', width: '90px', flexShrink: 0 }}>{item.label}</div>
               <div style={{ flex: 1, height: '8px', background: '#1e2535', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.round((item.value / total) * 100)}%`, background: item.color, borderRadius: '4px', transition: 'width 0.6s ease' }} />
+                <div style={{ height: '100%', width: `${Math.round((item.value / total) * 100)}%`, background: item.color, borderRadius: '4px' }} />
               </div>
-              <div style={{ fontSize: '13px', fontWeight: '700', color: '#fff', width: '24px', textAlign: 'right' }}>{item.value}</div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: '#fff', width: '20px', textAlign: 'right' }}>{item.value}</div>
             </div>
           ))}
         </div>
 
         {/* Prenotazioni */}
-        <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '24px' }}>
+        <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px' }}>
           <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '16px' }}>Prenotazioni</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             {[
-              { label: 'Totali',      value: stats.totalBookings,                              color: '#fff' },
-              { label: 'Cancellate',  value: stats.cancelledBookings,                          color: '#e85858' },
-              { label: 'Confermate',  value: stats.totalBookings - stats.cancelledBookings,     color: '#38c97a' },
-              { label: 'Tasso conf.', value: `${presenceRate}%`,                               color: '#c8f53a' },
+              { label: 'Totali',      value: stats.totalBookings,                          color: '#fff' },
+              { label: 'Cancellate',  value: stats.cancelledBookings,                      color: '#e85858' },
+              { label: 'Confermate',  value: stats.totalBookings - stats.cancelledBookings, color: '#38c97a' },
+              { label: 'Tasso conf.', value: `${presenceRate}%`,                           color: '#c8f53a' },
             ].map(item => (
               <div key={item.label} style={{ background: '#1e2535', borderRadius: '10px', padding: '14px' }}>
                 <div style={{ fontSize: '20px', fontWeight: '800', color: item.color }}>{item.value}</div>
@@ -140,8 +149,8 @@ export default function AnalyticsPage() {
             ))}
           </div>
         </div>
-      </div>
 
+      </div>
     </div>
   )
 }
