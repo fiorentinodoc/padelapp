@@ -23,15 +23,11 @@ export default function LezioniPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [isMobile, setIsMobile] = useState(false)
+  const [editingLesson, setEditingLesson] = useState<Lesson | null>(null)
   const [form, setForm] = useState({
-    title: '',
-    level: 'intermediate',
-    court: '',
-    date: '',
-    time: '',
-    duration_min: '90',
-    max_spots: '4',
-    recurrence: 'weekly'
+    title: '', level: 'intermediate', court: '',
+    date: '', time: '', duration_min: '90',
+    max_spots: '4', recurrence: 'weekly'
   })
   const router = useRouter()
   const supabase = createClient()
@@ -57,17 +53,41 @@ export default function LezioniPage() {
 
     if (profile?.clubs) {
       setClub(profile.clubs as any)
-
       const { data: lessonsData } = await supabase
         .from('lessons')
         .select('*')
         .eq('club_id', (profile.clubs as any).id)
         .is('cancelled_at', null)
         .order('starts_at', { ascending: true })
-
       setLessons(lessonsData ?? [])
     }
     setLoading(false)
+  }
+
+  function openNew() {
+    setEditingLesson(null)
+    setForm({ title: '', level: 'intermediate', court: '', date: '', time: '', duration_min: '90', max_spots: '4', recurrence: 'weekly' })
+    setError('')
+    setShowModal(true)
+  }
+
+  function openEdit(lesson: Lesson) {
+    setEditingLesson(lesson)
+    const date = new Date(lesson.starts_at)
+    const dateStr = date.toISOString().split('T')[0]
+    const timeStr = date.toTimeString().slice(0, 5)
+    setForm({
+      title:        lesson.title,
+      level:        lesson.level,
+      court:        lesson.court,
+      date:         dateStr,
+      time:         timeStr,
+      duration_min: String(lesson.duration_min),
+      max_spots:    String(lesson.max_spots),
+      recurrence:   lesson.recurrence ?? 'none'
+    })
+    setError('')
+    setShowModal(true)
   }
 
   async function handleSave() {
@@ -76,33 +96,52 @@ export default function LezioniPage() {
       setError('Compila tutti i campi obbligatori')
       return
     }
-
     setSaving(true)
     setError('')
 
     const starts_at = new Date(`${form.date}T${form.time}:00`).toISOString()
 
-    const { error: insertError } = await supabase
-      .from('lessons')
-      .insert({
-        club_id:      club.id,
-        title:        form.title,
-        level:        form.level,
-        court:        form.court,
-        starts_at,
-        duration_min: parseInt(form.duration_min),
-        max_spots:    parseInt(form.max_spots),
-        recurrence:   form.recurrence === 'none' ? null : form.recurrence
-      })
+    if (editingLesson) {
+      const { error: updateError } = await supabase
+        .from('lessons')
+        .update({
+          title:        form.title,
+          level:        form.level,
+          court:        form.court,
+          starts_at,
+          duration_min: parseInt(form.duration_min),
+          max_spots:    parseInt(form.max_spots),
+          recurrence:   form.recurrence === 'none' ? null : form.recurrence
+        })
+        .eq('id', editingLesson.id)
 
-    if (insertError) {
-      setError('Errore: ' + insertError.message)
-      setSaving(false)
-      return
+      if (updateError) {
+        setError('Errore: ' + updateError.message)
+        setSaving(false)
+        return
+      }
+    } else {
+      const { error: insertError } = await supabase
+        .from('lessons')
+        .insert({
+          club_id:      club.id,
+          title:        form.title,
+          level:        form.level,
+          court:        form.court,
+          starts_at,
+          duration_min: parseInt(form.duration_min),
+          max_spots:    parseInt(form.max_spots),
+          recurrence:   form.recurrence === 'none' ? null : form.recurrence
+        })
+
+      if (insertError) {
+        setError('Errore: ' + insertError.message)
+        setSaving(false)
+        return
+      }
     }
 
     setShowModal(false)
-    setForm({ title: '', level: 'intermediate', court: '', date: '', time: '', duration_min: '90', max_spots: '4', recurrence: 'weekly' })
     await loadData()
     setSaving(false)
   }
@@ -143,58 +182,61 @@ export default function LezioniPage() {
           <div style={{ fontSize: '22px', fontWeight: '800' }}>Lezioni</div>
           <div style={{ fontSize: '13px', color: '#5a5a6a', marginTop: '4px' }}>{lessons.length} lezioni programmate</div>
         </div>
-        <button onClick={() => setShowModal(true)} style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        <button onClick={openNew} style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           + Nuova
         </button>
       </div>
 
-      {/* Lista lezioni */}
+      {/* Lista */}
       {lessons.length === 0 ? (
         <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '60px 20px', textAlign: 'center' }}>
           <div style={{ fontSize: '40px', marginBottom: '16px' }}>🎾</div>
           <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '8px' }}>Nessuna lezione ancora</div>
           <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '24px' }}>Crea la prima lezione per iniziare</div>
-          <button onClick={() => setShowModal(true)} style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '12px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>+ Crea prima lezione</button>
+          <button onClick={openNew} style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '12px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>+ Crea prima lezione</button>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: '12px' }}>
           {lessons.map(lesson => {
             const date = new Date(lesson.starts_at)
             const timeStr = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-
             return (
               <div key={lesson.id} style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '16px' }}>
-                {/* Riga superiore: data + badge livello */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ background: '#1e2535', borderRadius: '8px', padding: '8px 12px', textAlign: 'center', minWidth: '52px' }}>
+                {/* Riga superiore */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                    <div style={{ background: '#1e2535', borderRadius: '8px', padding: '8px 10px', textAlign: 'center', minWidth: '50px', flexShrink: 0 }}>
                       <div style={{ fontSize: '10px', color: '#5a5a6a', textTransform: 'uppercase', fontWeight: '700' }}>{date.toLocaleDateString('it-IT', { weekday: 'short' })}</div>
                       <div style={{ fontSize: '18px', fontWeight: '800', color: '#fff', lineHeight: '1.1' }}>{date.getDate()}</div>
                       <div style={{ fontSize: '10px', color: '#5a5a6a' }}>{date.toLocaleDateString('it-IT', { month: 'short' })}</div>
                     </div>
-                    <div>
+                    <div style={{ flex: 1 }}>
                       <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '3px' }}>{lesson.title}</div>
                       <div style={{ fontSize: '12px', color: '#8b93a8' }}>🕐 {timeStr} · {lesson.duration_min} min</div>
                     </div>
                   </div>
-                  <span style={{ background: `${levelColor[lesson.level]}18`, color: levelColor[lesson.level], border: `1px solid ${levelColor[lesson.level]}40`, padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                  <span style={{ background: `${levelColor[lesson.level]}18`, color: levelColor[lesson.level], border: `1px solid ${levelColor[lesson.level]}40`, padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700', whiteSpace: 'nowrap', flexShrink: 0 }}>
                     {levelLabel[lesson.level]}
                   </span>
                 </div>
 
-                {/* Riga inferiore: dettagli + bottone */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                  <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: '#8b93a8', flexWrap: 'wrap' }}>
+                {/* Riga inferiore */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.04)', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '10px', fontSize: '12px', color: '#8b93a8', flexWrap: 'wrap' }}>
                     <span>📍 {lesson.court}</span>
                     <span>👥 max {lesson.max_spots}</span>
                     {lesson.recurrence && <span>🔁 {recurrenceLabel[lesson.recurrence] ?? lesson.recurrence}</span>}
                   </div>
-                  <button
-                    onClick={() => handleDelete(lesson.id)}
-                    style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.2)', color: '#e85858', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap', marginLeft: '8px' }}
-                  >
-                    Annulla
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '6px', flexShrink: 0 }}>
+                    <button onClick={() => openEdit(lesson)}
+                      style={{ background: 'rgba(91,127,255,0.1)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                      ✏️ Modifica
+                    </button>
+                    <button onClick={() => handleDelete(lesson.id)}
+                      style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.2)', color: '#e85858', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      Annulla
+                    </button>
+                  </div>
                 </div>
               </div>
             )
@@ -202,15 +244,18 @@ export default function LezioniPage() {
         </div>
       )}
 
-      {/* MODAL nuova lezione */}
+      {/* MODAL */}
       {showModal && (
-        <div
-          onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}
-        >
+        <div onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}>
           <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)', borderRadius: isMobile ? '20px 20px 0 0' : '20px', padding: '24px', width: '100%', maxWidth: isMobile ? '100%' : '480px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '6px' }}>Nuova lezione</div>
-            <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '20px' }}>Compila i dettagli della lezione</div>
+
+            <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '6px' }}>
+              {editingLesson ? 'Modifica lezione' : 'Nuova lezione'}
+            </div>
+            <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '20px' }}>
+              {editingLesson ? editingLesson.title : 'Compila i dettagli della lezione'}
+            </div>
 
             <div style={{ marginBottom: '14px' }}>
               <label style={{ fontSize: '11px', fontWeight: '700', color: '#8b93a8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>Nome lezione *</label>
@@ -284,9 +329,13 @@ export default function LezioniPage() {
             )}
 
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '13px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#8b93a8', borderRadius: '10px', fontSize: '14px', cursor: 'pointer' }}>Annulla</button>
-              <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: '13px', background: saving ? '#5a7a20' : '#c8f53a', border: 'none', color: '#0e1117', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: saving ? 'not-allowed' : 'pointer' }}>
-                {saving ? 'Salvataggio...' : 'Crea lezione'}
+              <button onClick={() => setShowModal(false)}
+                style={{ flex: 1, padding: '13px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#8b93a8', borderRadius: '10px', fontSize: '14px', cursor: 'pointer' }}>
+                Annulla
+              </button>
+              <button onClick={handleSave} disabled={saving}
+                style={{ flex: 2, padding: '13px', background: saving ? '#5a7a20' : '#c8f53a', border: 'none', color: '#0e1117', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: saving ? 'not-allowed' : 'pointer' }}>
+                {saving ? 'Salvataggio...' : editingLesson ? 'Salva modifiche' : 'Crea lezione'}
               </button>
             </div>
           </div>
