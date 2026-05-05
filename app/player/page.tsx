@@ -172,8 +172,8 @@ export default function AppHome() {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
         {[
-          { icon: '📅', label: 'Prenota lezione',  path: '/app/lezioni',      color: '#c8f53a', text: '#0e1117' },
-          { icon: '🎾', label: 'Le mie lezioni',   path: '/app/mie-lezioni',  color: '#1e2535', text: '#fff' },
+          { icon: '📅', label: 'Prenota lezione',  path: '/player/lezioni',      color: '#c8f53a', text: '#0e1117' },
+          { icon: '🎾', label: 'Le mie lezioni',   path: '/player/mie-lezioni',  color: '#1e2535', text: '#fff' },
         ].map(item => (
           <div key={item.path} onClick={() => router.push(item.path)}
             style={{ background: item.color, borderRadius: '14px', padding: '18px 16px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.06)' }}>

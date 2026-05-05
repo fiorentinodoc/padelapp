@@ -33,10 +33,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [])
 
   const navItems = [
-    { label: 'Home',      icon: '🏠', path: '/app' },
-    { label: 'Lezioni',   icon: '📅', path: '/app/lezioni' },
-    { label: 'Le mie',    icon: '🎾', path: '/app/mie-lezioni' },
-    { label: 'Profilo',   icon: '👤', path: '/app/profilo' },
+    { label: 'Home',      icon: '🏠', path: '/player' },
+    { label: 'Lezioni',   icon: '📅', path: '/player/lezioni' },
+    { label: 'Le mie',    icon: '🎾', path: '/player/mie-lezioni' },
+    { label: 'Profilo',   icon: '👤', path: '/player/profilo' },
   ]
 
   return (

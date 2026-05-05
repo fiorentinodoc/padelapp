@@ -114,7 +114,7 @@ export default function ProfiloPage() {
           <span style={{ fontSize: '14px' }}>🔔 Notifiche push</span>
           <span style={{ fontSize: '12px', color: '#38c97a', fontWeight: '600' }}>Attive</span>
         </div>
-        <div onClick={() => router.push('/app/lezioni')}
+        <div onClick={() => router.push('/player/lezioni')}
           style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
           <span style={{ fontSize: '14px' }}>📅 Prenota una lezione</span>
           <span style={{ color: '#5a5a6a' }}>›</span>

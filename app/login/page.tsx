@@ -43,7 +43,7 @@ export default function LoginPage() {
         .single()
 
       if (profile?.role === 'student') {
-        router.push('/app')
+        router.push('/player')
       } else {
         router.push('/dashboard')
       }
