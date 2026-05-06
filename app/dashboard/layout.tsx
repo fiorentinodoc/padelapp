@@ -1,5 +1,5 @@
 'use client'
-
+import { ClubProvider, useClub } from './club-context'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
@@ -11,8 +11,7 @@ interface Club {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const [clubs, setClubs] = useState<Club[]>([])
-  const [activeClub, setActiveClub] = useState<Club | null>(null)
+  const { clubs, activeClub, setActiveClub } = useClub()
   const [userEmail, setUserEmail] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [clubMenuOpen, setClubMenuOpen] = useState(false)
@@ -171,7 +170,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   )
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#0e1117', fontFamily: 'system-ui', color: '#fff' }}>
+  <ClubProvider>
+  <div style={{ display: 'flex', minHeight: '100vh', background: '#0e1117', fontFamily: 'system-ui', color: '#fff' }}>
 
       {/* SIDEBAR DESKTOP */}
       {!isMobile && (
@@ -208,4 +208,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     </div>
   )
+  </div>
+  </ClubProvider>
+  )
+}
 }
