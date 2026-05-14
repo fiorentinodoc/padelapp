@@ -1,5 +1,0 @@
-Clicca Run, poi quando hai la mail reale basterà fare:
-sqlupdate public.club_invites
-set email = 'emailreale@esempio.it'
-where club_name = 'BertoPadel';
-Dimmi quando è fatto!

@@ -1,0 +1,16 @@
+COME AUTORIZZARE L'EMAIL DELL'ISTRUTTORE
+
+Clicca Run, poi quando hai la mail reale basterà fare:
+sqlupdate public.club_invites
+set email = 'emailreale@esempio.it'
+where club_name = 'BertoPadel';
+Dimmi quando è fatto!
+
+CHIAVE PUBBLICA E CHIAVE PRIVATA PER NOTIFICHE PUSH
+
+Public Key:
+BIXp-pYSJGqU6-1z0mVhDslxBqMt50MYwvT2xfTWiXR_hjGkaSg-ujyUnUW9b0OnTlM89_A9lSIQC_alTSj79SE
+
+Private Key:
+pHa05rgWxrt9H14s3ZeHI_-eyaBjCJ_UE48Un84by2o
+

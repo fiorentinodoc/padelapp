@@ -3,6 +3,7 @@
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { registerPush } from '@/lib/push'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any>(null)
@@ -21,7 +22,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         .eq('id', user.id)
         .single()
 
-      // Se è admin reindirizza alla dashboard
       if (profile?.role === 'club_admin' || profile?.role === 'super_admin') {
         router.push('/dashboard')
         return
@@ -30,6 +30,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       setUser({ ...user, ...profile })
     }
     check()
+  }, [])
+
+  useEffect(() => {
+    async function setupPush() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      await registerPush(supabase, user.id)
+    }
+    setupPush()
   }, [])
 
   const navItems = [
@@ -46,7 +55,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       paddingBottom: '70px', maxWidth: '480px',
       margin: '0 auto', position: 'relative'
     }}>
-      {/* Contenuto */}
       {children}
 
       {/* Bottom Navigation */}
