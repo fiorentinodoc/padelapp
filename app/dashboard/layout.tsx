@@ -1,8 +1,9 @@
 'use client'
-import { ClubProvider, useClub } from './club-context'
+
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
+import { ClubProvider, useClub } from './club-context'
 
 interface Club {
   id: string
@@ -10,12 +11,12 @@ interface Club {
   role: string
 }
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { clubs, activeClub, setActiveClub } = useClub()
+function DashboardInner({ children }: { children: React.ReactNode }) {
   const [userEmail, setUserEmail] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [clubMenuOpen, setClubMenuOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const { clubs, activeClub, setActiveClub } = useClub()
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
@@ -32,35 +33,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       setUserEmail(user.email ?? '')
-
-      // Carica tutti i centri dell'istruttore
-      const { data: instructorClubs } = await supabase
-        .from('instructor_clubs')
-        .select('role, clubs(id, name)')
-        .eq('profile_id', user.id)
-
-      if (instructorClubs && instructorClubs.length > 0) {
-        const clubList = instructorClubs.map((ic: any) => ({
-          id:   ic.clubs.id,
-          name: ic.clubs.name,
-          role: ic.role
-        }))
-        setClubs(clubList)
-
-        // Leggi il centro attivo dal localStorage o usa il primo
-        const savedClubId = localStorage.getItem('activeClubId')
-        const saved = clubList.find(c => c.id === savedClubId)
-        setActiveClub(saved ?? clubList[0])
-      }
     }
     load()
   }, [])
 
   function switchClub(club: Club) {
     setActiveClub(club)
-    localStorage.setItem('activeClubId', club.id)
     setClubMenuOpen(false)
-    // Ricarica la pagina corrente per aggiornare i dati
     router.refresh()
   }
 
@@ -100,7 +79,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '8px 10px', cursor: clubs.length > 1 ? 'pointer' : 'default' }}
         >
           <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'rgba(200,245,58,0.15)', border: '1px solid rgba(200,245,58,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', color: '#c8f53a', flexShrink: 0 }}>
-            {activeClub?.name.charAt(0).toUpperCase()}
+            {activeClub?.name.charAt(0).toUpperCase() ?? '?'}
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <div style={{ fontSize: '13px', fontWeight: '600', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -170,8 +149,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   )
 
   return (
-  <ClubProvider>
-  <div style={{ display: 'flex', minHeight: '100vh', background: '#0e1117', fontFamily: 'system-ui', color: '#fff' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#0e1117', fontFamily: 'system-ui', color: '#fff' }}>
 
       {/* SIDEBAR DESKTOP */}
       {!isMobile && (
@@ -201,12 +179,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </>
       )}
 
- {/* CONTENUTO */}
+      {/* CONTENUTO */}
       <div style={{ marginLeft: isMobile ? 0 : '220px', marginTop: isMobile ? '56px' : 0, flex: 1, minHeight: isMobile ? 'calc(100vh - 56px)' : '100vh', width: isMobile ? '100%' : 'calc(100% - 220px)' }}>
         {children}
       </div>
 
     </div>
-  </ClubProvider>
+  )
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <ClubProvider>
+      <DashboardInner>{children}</DashboardInner>
+    </ClubProvider>
   )
 }
