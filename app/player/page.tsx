@@ -52,19 +52,22 @@ export default function AppHome() {
 
     if (student) {
       // Prossima lezione prenotata
-      const now = new Date().toISOString()
+    const now = new Date().toISOString()
 const { data: bookings } = await supabase
   .from('bookings')
-  .select('*, lessons!inner(*)')
+  .select('*, lessons(*)')
   .eq('student_id', student.id)
   .eq('status', 'confirmed')
-  .gte('lessons.starts_at', now)
-  .order('lessons(starts_at)', { ascending: true })
-  .limit(1)
+  .order('created_at', { ascending: false })
+  .limit(10)
 
-      if (bookings && bookings.length > 0) {
-        setNextLesson(bookings[0] as any)
-      }
+const futureBookings = bookings?.filter(
+  (b: any) => b.lessons && b.lessons.starts_at >= now
+) ?? []
+
+      if (futureBookings.length > 0) {
+  setNextLesson(futureBookings[0] as any)
+}
 
       // Lezione con posto libero dello stesso livello
       const { data: freeLessons } = await supabase
