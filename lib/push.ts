@@ -20,9 +20,9 @@ export async function registerPush(supabase: any, profileId: string): Promise<bo
     // Sottoscrivi al push service del browser
     const vapidKey = process.env.NEXT_PUBLIC_VAPID_KEY!
     const subscription = await reg.pushManager.subscribe({
-      userVisibleOnly:      true,
-      applicationServerKey: urlBase64ToUint8Array(vapidKey)
-    })
+  userVisibleOnly:      true,
+  applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource
+})
 
     // Salva la subscription su Supabase
     const token = JSON.stringify(subscription)
