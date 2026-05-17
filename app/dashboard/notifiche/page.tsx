@@ -55,11 +55,10 @@ export default function NotifichePage() {
     const now   = new Date().toISOString()
 
     const { data: bookings } = await supabase
-      .from('bookings')
-      .select('id, student_id, lesson_id, cancelled_at, students(first_name, last_name), lessons(title, starts_at, court, level, club_id, max_spots)')
-      .eq('status', 'cancelled')
-      .gte('cancelled_at', since)
-      .not('lessons', 'is', null)
+  .from('bookings')
+  .select('id, student_id, lesson_id, cancelled_at, students(first_name, last_name), lessons!inner(title, starts_at, court, level, club_id, max_spots)')
+  .eq('status', 'cancelled')
+  .gte('cancelled_at', since)
 
     if (!bookings) { setLoading(false); return }
 
