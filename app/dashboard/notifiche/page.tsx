@@ -51,7 +51,6 @@ export default function NotifichePage() {
     if (!activeClub) return
     setLoading(true)
 
-    // Prenotazioni cancellate di recente (ultime 48h) per lezioni future
     const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
     const now   = new Date().toISOString()
 
@@ -64,7 +63,6 @@ export default function NotifichePage() {
 
     if (!bookings) { setLoading(false); return }
 
-    // Filtra solo lezioni future del club attivo
     const relevant = bookings.filter((b: any) =>
       b.lessons &&
       b.lessons.club_id === activeClub.id &&
@@ -85,7 +83,6 @@ export default function NotifichePage() {
 
     setCancellations(cancList)
 
-    // Per ogni cancellazione trova alunni compatibili con telefono
     const candMap: Record<string, Candidate[]> = {}
     for (const c of cancList) {
       const { data: booked } = await supabase
@@ -98,7 +95,7 @@ export default function NotifichePage() {
 
       let query = supabase
         .from('students')
-        .select('id, first_name, last_name, phone')
+        .select('id, first_name, last_name, phone, level')
         .eq('club_id', c.club_id)
         .eq('level', c.level)
         .eq('status', 'active')
@@ -119,7 +116,7 @@ export default function NotifichePage() {
     if (!activeClub) return
     let query = supabase
       .from('students')
-      .select('id, first_name, last_name, phone')
+      .select('id, first_name, last_name, phone, level')
       .eq('club_id', activeClub.id)
       .eq('status', 'active')
       .not('phone', 'is', null)
@@ -142,8 +139,8 @@ export default function NotifichePage() {
     window.open(buildWhatsAppLink(phone, message), '_blank')
   }
 
-  function openAllWhatsApp(candidates: Candidate[], message: string) {
-    candidates.forEach((c, i) => {
+  function openAllWhatsApp(cands: Candidate[], message: string) {
+    cands.forEach((c, i) => {
       if (c.phone) {
         setTimeout(() => {
           window.open(buildWhatsAppLink(c.phone!, message), '_blank')
@@ -172,7 +169,7 @@ export default function NotifichePage() {
         </div>
       </div>
 
-      {/* POSTI LIBERI DA CANCELLAZIONI */}
+      {/* POSTI LIBERI */}
       <div style={{ marginBottom: '28px' }}>
         <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           🔔 Posti liberati (ultime 48h)
@@ -193,7 +190,6 @@ export default function NotifichePage() {
 
               return (
                 <div key={canc.booking_id} style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px' }}>
-                  {/* Header lezione */}
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '14px' }}>
                     <div>
                       <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '4px' }}>{canc.lesson_title}</div>
@@ -209,12 +205,10 @@ export default function NotifichePage() {
                     </span>
                   </div>
 
-                  {/* Messaggio preview */}
                   <div style={{ background: '#1e2535', borderRadius: '10px', padding: '12px 14px', marginBottom: '14px', fontSize: '13px', color: '#8b93a8', whiteSpace: 'pre-line', lineHeight: '1.5' }}>
                     {message}
                   </div>
 
-                  {/* Candidati */}
                   {cands.length === 0 ? (
                     <div style={{ fontSize: '13px', color: '#5a5a6a', textAlign: 'center', padding: '8px' }}>
                       Nessun alunno disponibile con numero di telefono
@@ -233,13 +227,12 @@ export default function NotifichePage() {
                             </div>
                             <button
                               onClick={() => openWhatsApp(cand.phone!, message)}
-                              style={{ background: '#25D366', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              style={{ background: '#25D366', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                               📱 WhatsApp
                             </button>
                           </div>
                         ))}
                       </div>
-
                       {cands.length > 1 && (
                         <button
                           onClick={() => openAllWhatsApp(cands, message)}
@@ -265,8 +258,9 @@ export default function NotifichePage() {
           <select
             value={manualForm.target}
             onChange={async e => {
-              setManualForm({ ...manualForm, target: e.target.value })
-              await loadManualCandidates(e.target.value)
+              const val = e.target.value
+              setManualForm(f => ({ ...f, target: val }))
+              await loadManualCandidates(val)
             }}
             style={{ width: '100%', padding: '11px 12px', background: '#1e2535', border: '1.5px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#fff', fontSize: '14px', outline: 'none' }}>
             <option value="all">Tutti gli alunni</option>
@@ -280,7 +274,7 @@ export default function NotifichePage() {
           <label style={{ fontSize: '11px', fontWeight: '700', color: '#8b93a8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>Messaggio</label>
           <textarea
             value={manualForm.message}
-            onChange={e => setManualForm({ ...manualForm, message: e.target.value })}
+            onChange={e => setManualForm(f => ({ ...f, message: e.target.value }))}
             placeholder="Es: Lezione di sabato spostata alle 11:00 ⚠️"
             rows={4}
             style={{ width: '100%', padding: '11px 12px', background: '#1e2535', border: '1.5px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#fff', fontSize: '14px', outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'system-ui' }}
@@ -295,7 +289,9 @@ export default function NotifichePage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
               {manualCandidates.map(cand => (
                 <div key={cand.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#1e2535', borderRadius: '8px', padding: '8px 12px' }}>
-                  <div style={{ flex: 1, fontSize: '13px' }}>{cand.first_name} {cand.last_name} · <span style={{ color: '#5a5a6a' }}>{cand.phone}</span></div>
+                  <div style={{ flex: 1, fontSize: '13px' }}>
+                    {cand.first_name} {cand.last_name} · <span style={{ color: '#5a5a6a' }}>{cand.phone}</span>
+                  </div>
                   <button
                     onClick={() => openWhatsApp(cand.phone!, manualForm.message)}
                     style={{ background: '#25D366', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
