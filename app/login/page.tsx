@@ -8,9 +8,11 @@ type Mode = 'login' | 'register' | 'forgot'
 
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>('login')
+  const [isInstructor, setIsInstructor] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [clubName, setClubName] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -21,7 +23,7 @@ export default function LoginPage() {
 
   function reset() {
     setError(''); setSuccess(''); setEmail(''); setPassword('')
-    setConfirmPassword(''); setFirstName(''); setLastName('')
+    setConfirmPassword(''); setFirstName(''); setLastName(''); setClubName('')
   }
 
   function switchMode(m: Mode) { reset(); setMode(m) }
@@ -42,10 +44,12 @@ export default function LoginPage() {
         .eq('id', user.id)
         .single()
 
-      if (profile?.role === 'student') {
-        router.push('/player')
-      } else {
+      if (profile?.role === 'super_admin' ) {
+        router.push('/superadmin')
+      } else if (profile?.role === 'club_admin') {
         router.push('/dashboard')
+      } else {
+        router.push('/player')
       }
     }
     setLoading(false)
@@ -55,20 +59,15 @@ export default function LoginPage() {
     if (!firstName || !lastName || !email || !password) {
       setError('Compila tutti i campi obbligatori'); return
     }
+    if (isInstructor && !clubName) {
+      setError('Inserisci il nome del club'); return
+    }
     if (password !== confirmPassword) { setError('Le password non coincidono'); return }
     if (password.length < 6) { setError('La password deve avere almeno 6 caratteri'); return }
     setLoading(true)
     setError('')
 
-    // Controlla se l'email è nella lista inviti come club_admin
-    const { data: invite } = await supabase
-      .from('club_invites')
-      .select('*')
-      .eq('email', email.toLowerCase().trim())
-      .eq('used', false)
-      .single()
-
-    const role = invite ? 'club_admin' : 'student'
+    const role = isInstructor ? 'club_admin' : 'student'
 
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
@@ -78,7 +77,7 @@ export default function LoginPage() {
           first_name: firstName,
           last_name:  lastName,
           role,
-          club_name:  invite?.club_name ?? ''
+          club_name:  isInstructor ? clubName : ''
         }
       }
     })
@@ -86,20 +85,38 @@ export default function LoginPage() {
     if (signUpError) { setError(signUpError.message); setLoading(false); return }
 
     if (data.user) {
-      // Aggiorna il profilo con ruolo e nome
-      await supabase.from('profiles').update({
-        first_name: firstName,
-        last_name:  lastName,
-        role,
-      }).eq('id', data.user.id)
+      if (isInstructor) {
+        // Crea il club
+        const slug = clubName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
+        const { data: newClub } = await supabase
+          .from('clubs')
+          .insert({ name: clubName, slug, plan: 'free', max_students: 20 })
+          .select()
+          .single()
 
-      // Se è club_admin crea il club e segna l'invito come usato
-      if (invite) {
-        const slug = invite.club_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-        await supabase.from('clubs').insert({
-          name: invite.club_name, slug, plan: 'free', max_students: 20
-        })
-        await supabase.from('club_invites').update({ used: true }).eq('id', invite.id)
+        if (newClub) {
+          // Aggiorna profilo
+          await supabase.from('profiles').update({
+            first_name: firstName,
+            last_name:  lastName,
+            role:       'club_admin',
+            club_id:    newClub.id
+          }).eq('id', data.user.id)
+
+          // Collega come owner
+          await supabase.from('instructor_clubs').insert({
+            profile_id: data.user.id,
+            club_id:    newClub.id,
+            role:       'owner'
+          })
+        }
+      } else {
+        // Aggiorna profilo giocatore
+        await supabase.from('profiles').update({
+          first_name: firstName,
+          last_name:  lastName,
+          role:       'student'
+        }).eq('id', data.user.id)
       }
 
       setSuccess('Account creato! Controlla la tua email per confermare, poi accedi.')
@@ -157,7 +174,7 @@ export default function LoginPage() {
         </div>
         <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '28px' }}>
           {mode === 'login'    && 'Istruttore o giocatore'}
-          {mode === 'register' && 'Il ruolo viene assegnato automaticamente'}
+          {mode === 'register' && 'Scegli il tipo di account'}
           {mode === 'forgot'   && 'Ti mandiamo un link via email'}
         </div>
 
@@ -196,12 +213,31 @@ export default function LoginPage() {
           </>
         )}
 
-        {/* ── REGISTRAZIONE (unica per tutti) ── */}
+        {/* ── REGISTRAZIONE ── */}
         {mode === 'register' && (
           <>
-            <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.2)', borderRadius: '10px', padding: '12px 14px', fontSize: '12px', color: '#8b93a8', marginBottom: '20px', lineHeight: '1.6' }}>
-              💡 Se la tua email è stata autorizzata dall'amministratore, avrai automaticamente accesso alla dashboard istruttore. Altrimenti accederai come giocatore.
+            {/* Toggle istruttore/giocatore */}
+            <div style={{ display: 'flex', background: '#1e2535', borderRadius: '10px', padding: '4px', marginBottom: '20px' }}>
+              <div
+                onClick={() => setIsInstructor(false)}
+                style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: !isInstructor ? '#c8f53a' : 'transparent', color: !isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700', transition: 'all 0.15s' }}>
+                👤 Sono un giocatore
+              </div>
+              <div
+                onClick={() => setIsInstructor(true)}
+                style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: isInstructor ? '#c8f53a' : 'transparent', color: isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700', transition: 'all 0.15s' }}>
+                🎾 Sono un istruttore
+              </div>
             </div>
+
+            {/* Nome club solo per istruttori */}
+            {isInstructor && (
+              <div style={{ marginBottom: '14px' }}>
+                <label style={labelStyle}>Nome club / academy *</label>
+                <input type="text" value={clubName} onChange={e => setClubName(e.target.value)}
+                  placeholder="Es: ASD Padel Roma" style={inputStyle} />
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
               <div>
@@ -215,6 +251,7 @@ export default function LoginPage() {
                   placeholder="Ferretti" style={inputStyle} />
               </div>
             </div>
+
             <div style={{ marginBottom: '14px' }}>
               <label style={labelStyle}>Email *</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)}
@@ -230,10 +267,18 @@ export default function LoginPage() {
               <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
                 placeholder="Ripeti la password" style={inputStyle} />
             </div>
+
+            {!isInstructor && (
+              <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '10px', padding: '12px 14px', fontSize: '12px', color: '#8b93a8', marginBottom: '16px', lineHeight: '1.6' }}>
+                💡 Dopo la registrazione il tuo istruttore ti aggiungerà al club e potrai vedere le lezioni disponibili.
+              </div>
+            )}
+
             {error && <ErrorBox msg={error} />}
             {success && <SuccessBox msg={success} />}
+
             <button onClick={handleRegister} disabled={loading} style={primaryBtn(loading)}>
-              {loading ? 'Creazione...' : 'Crea account'}
+              {loading ? 'Creazione...' : isInstructor ? 'Crea account istruttore' : 'Crea account giocatore'}
             </button>
             <div style={{ textAlign: 'center', marginTop: '20px' }}>
               <span onClick={() => switchMode('login')}
@@ -294,6 +339,6 @@ function primaryBtn(loading: boolean): React.CSSProperties {
     color: '#0e1117', border: 'none', borderRadius: '10px',
     fontSize: '15px', fontWeight: '700',
     cursor: loading ? 'not-allowed' : 'pointer',
-    fontFamily: 'system-ui'
+    fontFamily: 'system-ui', marginBottom: '4px'
   }
 }
