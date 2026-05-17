@@ -3,7 +3,7 @@
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { registerPush } from '@/lib/push'
+
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any>(null)
@@ -32,14 +32,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     check()
   }, [])
 
-  useEffect(() => {
-    async function setupPush() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      await registerPush(supabase, user.id)
-    }
-    setupPush()
-  }, [])
+  
 
   const navItems = [
     { label: 'Home',      icon: '🏠', path: '/player' },
