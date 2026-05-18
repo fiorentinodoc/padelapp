@@ -1,3 +1,4 @@
+{['Club', 'Piano', 'Creato il', 'Azioni'].map(h => (
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -96,15 +97,23 @@ export default function SuperAdminPage() {
   }
 
   async function handleReject(req: Request) {
-    if (!confirm(`Rifiutare la richiesta di ${req.first_name} ${req.last_name}?`)) return
+  if (!confirm(`Rifiutare la richiesta di ${req.first_name} ${req.last_name}?\n\nLa richiesta verrà eliminata e potrà ripresentarsi.`)) return
 
-    await supabase
-      .from('access_requests')
-      .update({ status: 'rejected' })
-      .eq('id', req.id)
+  // Elimina la richiesta invece di segnarla come rifiutata
+  // Così l'email è libera per una nuova richiesta
+  await supabase
+    .from('access_requests')
+    .delete()
+    .eq('id', req.id)
 
-    await loadData()
-  }
+  // Assicurati che non ci sia un invito pendente
+  await supabase
+    .from('club_invites')
+    .delete()
+    .eq('email', req.email)
+
+  await loadData()
+}
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -225,7 +234,17 @@ export default function SuperAdminPage() {
             )}
           </div>
         )}
+async function handleDeleteClub(club: Club) {
+  if (!confirm(`Eliminare il club "${club.name}"?\n\nATTENZIONE: verranno eliminati tutti i dati associati (lezioni, alunni, prenotazioni).`)) return
 
+  // Elimina in cascata
+  await supabase.from('instructor_clubs').delete().eq('club_id', club.id)
+  await supabase.from('lessons').delete().eq('club_id', club.id)
+  await supabase.from('students').delete().eq('club_id', club.id)
+  await supabase.from('clubs').delete().eq('id', club.id)
+
+  await loadData()
+}
         {/* CLUB */}
         {tab === 'clubs' && (
           <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', overflow: 'hidden' }}>
@@ -239,23 +258,35 @@ export default function SuperAdminPage() {
               </thead>
               <tbody>
                 {clubs.map(club => (
-                  <tr key={club.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                    <td style={{ padding: '14px 16px', fontWeight: '600' }}>{club.name}</td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span style={{ background: club.plan === 'pro' ? 'rgba(200,245,58,0.12)' : 'rgba(255,255,255,0.06)', color: club.plan === 'pro' ? '#c8f53a' : '#8b93a8', padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>
-                        {club.plan}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 16px', fontSize: '13px', color: '#8b93a8' }}>
-                      {new Date(club.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+  <tr key={club.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+    <td style={{ padding: '14px 16px', fontWeight: '600' }}>{club.name}</td>
+    <td style={{ padding: '14px 16px' }}>
+      <span style={{ background: club.plan === 'pro' ? 'rgba(200,245,58,0.12)' : 'rgba(255,255,255,0.06)', color: club.plan === 'pro' ? '#c8f53a' : '#8b93a8', padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>
+        {club.plan}
+      </span>
+    </td>
+    <td style={{ padding: '14px 16px', fontSize: '13px', color: '#8b93a8' }}>
+      {new Date(club.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}
+    </td>
+    <td style={{ padding: '14px 16px' }}>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <select
+          value={club.plan}
+          onChange={async e => {
+            await supabase.from('clubs').update({ plan: e.target.value }).eq('id', club.id)
+            await loadData()
+          }}
+          style={{ background: '#1e2535', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', outline: 'none' }}>
+          <option value="free">Free</option>
+          <option value="starter">Starter</option>
+          <option value="pro">Pro</option>
+        </select>
+        <button
+          onClick={() => handleDeleteClub(club)}
+          style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.2)', color: '#e85858', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>
+          Elimina
+        </button>
       </div>
-    </div>
-  )
-}
+    </td>
+  </tr>
+))}
