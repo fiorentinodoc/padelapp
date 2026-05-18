@@ -1,4 +1,3 @@
-{['Club', 'Piano', 'Creato il', 'Azioni'].map(h => (
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -70,7 +69,6 @@ export default function SuperAdminPage() {
   async function handleApprove(req: Request) {
     setApproving(req.id)
 
-    // Inserisci in club_invites
     const { error } = await supabase
       .from('club_invites')
       .upsert({
@@ -85,7 +83,6 @@ export default function SuperAdminPage() {
       return
     }
 
-    // Aggiorna status richiesta
     await supabase
       .from('access_requests')
       .update({ status: 'approved' })
@@ -97,23 +94,22 @@ export default function SuperAdminPage() {
   }
 
   async function handleReject(req: Request) {
-  if (!confirm(`Rifiutare la richiesta di ${req.first_name} ${req.last_name}?\n\nLa richiesta verrà eliminata e potrà ripresentarsi.`)) return
+    if (!confirm(`Rifiutare la richiesta di ${req.first_name} ${req.last_name}?\n\nLa richiesta verrà eliminata e potrà ripresentarsi.`)) return
 
-  // Elimina la richiesta invece di segnarla come rifiutata
-  // Così l'email è libera per una nuova richiesta
-  await supabase
-    .from('access_requests')
-    .delete()
-    .eq('id', req.id)
+    await supabase.from('access_requests').delete().eq('id', req.id)
+    await supabase.from('club_invites').delete().eq('email', req.email)
+    await loadData()
+  }
 
-  // Assicurati che non ci sia un invito pendente
-  await supabase
-    .from('club_invites')
-    .delete()
-    .eq('email', req.email)
+  async function handleDeleteClub(club: Club) {
+    if (!confirm(`Eliminare il club "${club.name}"?\n\nATTENZIONE: verranno eliminati tutti i dati associati.`)) return
 
-  await loadData()
-}
+    await supabase.from('instructor_clubs').delete().eq('club_id', club.id)
+    await supabase.from('lessons').delete().eq('club_id', club.id)
+    await supabase.from('students').delete().eq('club_id', club.id)
+    await supabase.from('clubs').delete().eq('id', club.id)
+    await loadData()
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -215,14 +211,11 @@ export default function SuperAdminPage() {
 
                     {req.status === 'pending' && (
                       <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                        <button
-                          onClick={() => handleApprove(req)}
-                          disabled={approving === req.id}
+                        <button onClick={() => handleApprove(req)} disabled={approving === req.id}
                           style={{ background: '#38c97a', border: 'none', color: '#fff', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                           {approving === req.id ? '...' : '✅ Approva'}
                         </button>
-                        <button
-                          onClick={() => handleReject(req)}
+                        <button onClick={() => handleReject(req)}
                           style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.2)', color: '#e85858', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                           ❌ Rifiuta
                         </button>
@@ -234,59 +227,52 @@ export default function SuperAdminPage() {
             )}
           </div>
         )}
-async function handleDeleteClub(club: Club) {
-  if (!confirm(`Eliminare il club "${club.name}"?\n\nATTENZIONE: verranno eliminati tutti i dati associati (lezioni, alunni, prenotazioni).`)) return
 
-  // Elimina in cascata
-  await supabase.from('instructor_clubs').delete().eq('club_id', club.id)
-  await supabase.from('lessons').delete().eq('club_id', club.id)
-  await supabase.from('students').delete().eq('club_id', club.id)
-  await supabase.from('clubs').delete().eq('id', club.id)
-
-  await loadData()
-}
         {/* CLUB */}
         {tab === 'clubs' && (
           <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#1e2535' }}>
-                  {['Club', 'Piano', 'Creato il'].map(h => (
+                  {['Club', 'Piano', 'Creato il', 'Azioni'].map(h => (
                     <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#5a5a6a', textTransform: 'uppercase', letterSpacing: '0.8px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {clubs.map(club => (
-  <tr key={club.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-    <td style={{ padding: '14px 16px', fontWeight: '600' }}>{club.name}</td>
-    <td style={{ padding: '14px 16px' }}>
-      <span style={{ background: club.plan === 'pro' ? 'rgba(200,245,58,0.12)' : 'rgba(255,255,255,0.06)', color: club.plan === 'pro' ? '#c8f53a' : '#8b93a8', padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>
-        {club.plan}
-      </span>
-    </td>
-    <td style={{ padding: '14px 16px', fontSize: '13px', color: '#8b93a8' }}>
-      {new Date(club.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}
-    </td>
-    <td style={{ padding: '14px 16px' }}>
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <select
-          value={club.plan}
-          onChange={async e => {
-            await supabase.from('clubs').update({ plan: e.target.value }).eq('id', club.id)
-            await loadData()
-          }}
-          style={{ background: '#1e2535', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', outline: 'none' }}>
-          <option value="free">Free</option>
-          <option value="starter">Starter</option>
-          <option value="pro">Pro</option>
-        </select>
-        <button
-          onClick={() => handleDeleteClub(club)}
-          style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.2)', color: '#e85858', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>
-          Elimina
-        </button>
+                  <tr key={club.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '14px 16px', fontWeight: '600' }}>{club.name}</td>
+                    <td style={{ padding: '14px 16px' }}>
+                      <select
+                        value={club.plan}
+                        onChange={async e => {
+                          await supabase.from('clubs').update({ plan: e.target.value }).eq('id', club.id)
+                          await loadData()
+                        }}
+                        style={{ background: '#1e2535', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', outline: 'none' }}>
+                        <option value="free">Free</option>
+                        <option value="starter">Starter</option>
+                        <option value="pro">Pro</option>
+                      </select>
+                    </td>
+                    <td style={{ padding: '14px 16px', fontSize: '13px', color: '#8b93a8' }}>
+                      {new Date(club.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </td>
+                    <td style={{ padding: '14px 16px' }}>
+                      <button onClick={() => handleDeleteClub(club)}
+                        style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.2)', color: '#e85858', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>
+                        Elimina
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
       </div>
-    </td>
-  </tr>
-))}
+    </div>
+  )
+}
