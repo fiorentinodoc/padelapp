@@ -1,13 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 type Mode = 'login' | 'register' | 'forgot'
 
-export default function LoginPage() {
-  const [mode, setMode] = useState<Mode>('login')
+function LoginForm() {
+  const searchParams = useSearchParams()
+  const joinCode     = searchParams.get('code')
+  const initialMode  = (searchParams.get('mode') as Mode) ?? 'login'
+
+  const [mode, setMode] = useState<Mode>(initialMode)
   const [isInstructor, setIsInstructor] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -28,6 +32,35 @@ export default function LoginPage() {
 
   function switchMode(m: Mode) { reset(); setMode(m) }
 
+  async function handleJoinCode(userId: string) {
+    if (!joinCode) return
+    const { data: joinCodeData } = await supabase
+      .from('join_codes')
+      .select('id, club_id, uses')
+      .eq('code', joinCode)
+      .eq('active', true)
+      .single()
+
+    if (!joinCodeData) return
+
+    const { data: student } = await supabase
+      .from('students')
+      .select('id')
+      .eq('profile_id', userId)
+      .single()
+
+    if (student) {
+      await supabase.from('student_clubs').upsert({
+        student_id: student.id,
+        club_id:    joinCodeData.club_id
+      }, { onConflict: 'student_id,club_id' })
+
+      await supabase.from('join_codes')
+        .update({ uses: joinCodeData.uses + 1 })
+        .eq('id', joinCodeData.id)
+    }
+  }
+
   async function handleLogin() {
     if (!email || !password) { setError('Compila tutti i campi'); return }
     setLoading(true)
@@ -38,13 +71,15 @@ export default function LoginPage() {
 
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
+      await handleJoinCode(user.id)
+
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
 
-      if (profile?.role === 'super_admin' ) {
+      if (profile?.role === 'super_admin') {
         router.push('/superadmin')
       } else if (profile?.role === 'club_admin') {
         router.push('/dashboard')
@@ -86,7 +121,21 @@ export default function LoginPage() {
 
     if (data.user) {
       if (isInstructor) {
-        // Crea il club
+        // Controlla invito
+        const { data: invite } = await supabase
+          .from('club_invites')
+          .select('*')
+          .eq('email', email.toLowerCase().trim())
+          .eq('used', false)
+          .single()
+
+        if (!invite) {
+          setError('La tua email non è autorizzata come istruttore. Richiedi l\'accesso prima.')
+          await supabase.auth.signOut()
+          setLoading(false)
+          return
+        }
+
         const slug = clubName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
         const { data: newClub } = await supabase
           .from('clubs')
@@ -95,7 +144,6 @@ export default function LoginPage() {
           .single()
 
         if (newClub) {
-          // Aggiorna profilo
           await supabase.from('profiles').update({
             first_name: firstName,
             last_name:  lastName,
@@ -103,20 +151,25 @@ export default function LoginPage() {
             club_id:    newClub.id
           }).eq('id', data.user.id)
 
-          // Collega come owner
           await supabase.from('instructor_clubs').insert({
             profile_id: data.user.id,
             club_id:    newClub.id,
             role:       'owner'
           })
+
+          await supabase.from('club_invites')
+            .update({ used: true })
+            .eq('id', invite.id)
         }
       } else {
-        // Aggiorna profilo giocatore
         await supabase.from('profiles').update({
           first_name: firstName,
           last_name:  lastName,
           role:       'student'
         }).eq('id', data.user.id)
+
+        // Collega al club se c'è un codice invito
+        await handleJoinCode(data.user.id)
       }
 
       setSuccess('Account creato! Controlla la tua email per confermare, poi accedi.')
@@ -163,10 +216,14 @@ export default function LoginPage() {
         width: '100%', maxWidth: '420px'
       }}>
 
-        {/* Logo */}
         <div style={{ fontSize: '26px', fontWeight: '800', color: '#c8f53a', marginBottom: '6px' }}>padel●</div>
 
-        {/* Titolo */}
+        {joinCode && mode === 'register' && (
+          <div style={{ background: 'rgba(200,245,58,0.08)', border: '1px solid rgba(200,245,58,0.2)', borderRadius: '10px', padding: '10px 14px', fontSize: '12px', color: '#c8f53a', marginBottom: '16px' }}>
+            🎾 Stai accettando un invito — verrai collegato automaticamente al club!
+          </div>
+        )}
+
         <div style={{ fontSize: '18px', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>
           {mode === 'login'    && 'Accedi al tuo account'}
           {mode === 'register' && 'Crea il tuo account'}
@@ -216,22 +273,21 @@ export default function LoginPage() {
         {/* ── REGISTRAZIONE ── */}
         {mode === 'register' && (
           <>
-            {/* Toggle istruttore/giocatore */}
-            <div style={{ display: 'flex', background: '#1e2535', borderRadius: '10px', padding: '4px', marginBottom: '20px' }}>
-              <div
-                onClick={() => setIsInstructor(false)}
-                style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: !isInstructor ? '#c8f53a' : 'transparent', color: !isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700', transition: 'all 0.15s' }}>
-                👤 Sono un giocatore
+            {/* Toggle solo se non c'è codice invito */}
+            {!joinCode && (
+              <div style={{ display: 'flex', background: '#1e2535', borderRadius: '10px', padding: '4px', marginBottom: '20px' }}>
+                <div onClick={() => setIsInstructor(false)}
+                  style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: !isInstructor ? '#c8f53a' : 'transparent', color: !isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700', transition: 'all 0.15s' }}>
+                  👤 Sono un giocatore
+                </div>
+                <div onClick={() => setIsInstructor(true)}
+                  style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: isInstructor ? '#c8f53a' : 'transparent', color: isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700', transition: 'all 0.15s' }}>
+                  🎾 Sono un istruttore
+                </div>
               </div>
-              <div
-                onClick={() => setIsInstructor(true)}
-                style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: isInstructor ? '#c8f53a' : 'transparent', color: isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700', transition: 'all 0.15s' }}>
-                🎾 Sono un istruttore
-              </div>
-            </div>
+            )}
 
-            {/* Nome club solo per istruttori */}
-            {isInstructor && (
+            {isInstructor && !joinCode && (
               <div style={{ marginBottom: '14px' }}>
                 <label style={labelStyle}>Nome club / academy *</label>
                 <input type="text" value={clubName} onChange={e => setClubName(e.target.value)}
@@ -268,9 +324,9 @@ export default function LoginPage() {
                 placeholder="Ripeti la password" style={inputStyle} />
             </div>
 
-            {!isInstructor && (
+            {!isInstructor && !joinCode && (
               <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '10px', padding: '12px 14px', fontSize: '12px', color: '#8b93a8', marginBottom: '16px', lineHeight: '1.6' }}>
-                💡 Dopo la registrazione il tuo istruttore ti aggiungerà al club e potrai vedere le lezioni disponibili.
+                💡 Dopo la registrazione il tuo istruttore ti aggiungerà al club tramite link invito.
               </div>
             )}
 
@@ -278,7 +334,7 @@ export default function LoginPage() {
             {success && <SuccessBox msg={success} />}
 
             <button onClick={handleRegister} disabled={loading} style={primaryBtn(loading)}>
-              {loading ? 'Creazione...' : isInstructor ? 'Crea account istruttore' : 'Crea account giocatore'}
+              {loading ? 'Creazione...' : joinCode ? 'Crea account e unisciti →' : isInstructor ? 'Crea account istruttore' : 'Crea account giocatore'}
             </button>
             <div style={{ textAlign: 'center', marginTop: '20px' }}>
               <span onClick={() => switchMode('login')}
@@ -313,6 +369,18 @@ export default function LoginPage() {
 
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', background: '#0e1117', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c8f53a', fontFamily: 'system-ui' }}>
+        Caricamento...
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }
 

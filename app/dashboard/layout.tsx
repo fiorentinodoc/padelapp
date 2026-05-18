@@ -53,14 +53,15 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     setMenuOpen(false)
   }
 
-  const navItems = [
-    { label: 'Dashboard',  icon: '▦',  path: '/dashboard' },
-    { label: 'Lezioni',    icon: '📅', path: '/dashboard/lezioni' },
-    { label: 'Alunni',     icon: '👥', path: '/dashboard/alunni' },
-    { label: 'Notifiche',  icon: '🔔', path: '/dashboard/notifiche' },
-    { label: 'Analytics',  icon: '📊', path: '/dashboard/analytics' },
-    { label: 'Centri',     icon: '🏟️', path: '/dashboard/centri' },
-  ]
+ const navItems = [
+  { label: 'Dashboard',  icon: '▦',  path: '/dashboard' },
+  { label: 'Lezioni',    icon: '📅', path: '/dashboard/lezioni' },
+  { label: 'Alunni',     icon: '👥', path: '/dashboard/alunni' },
+  { label: 'Notifiche',  icon: '🔔', path: '/dashboard/notifiche' },
+  { label: 'Analytics',  icon: '📊', path: '/dashboard/analytics' },
+  { label: 'Inviti',     icon: '🔗', path: '/dashboard/inviti' },
+  { label: 'Centri',     icon: '🏟️', path: '/dashboard/centri' },
+]
 
   const SidebarInner = () => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
