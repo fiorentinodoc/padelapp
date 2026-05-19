@@ -33,33 +33,58 @@ function LoginForm() {
   function switchMode(m: Mode) { reset(); setMode(m) }
 
   async function handleJoinCode(userId: string) {
-    if (!joinCode) return
-    const { data: joinCodeData } = await supabase
-      .from('join_codes')
-      .select('id, club_id, uses')
-      .eq('code', joinCode)
-      .eq('active', true)
+  if (!joinCode) return
+
+  const { data: joinCodeData } = await supabase
+    .from('join_codes')
+    .select('id, club_id, uses')
+    .eq('code', joinCode)
+    .eq('active', true)
+    .single()
+
+  if (!joinCodeData) return
+
+  // Crea lo student record se non esiste
+  let { data: student } = await supabase
+    .from('students')
+    .select('id')
+    .eq('profile_id', userId)
+    .single()
+
+  if (!student) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('first_name, last_name')
+      .eq('id', userId)
       .single()
 
-    if (!joinCodeData) return
-
-    const { data: student } = await supabase
+    const { data: newStudent } = await supabase
       .from('students')
-      .select('id')
-      .eq('profile_id', userId)
+      .insert({
+        profile_id: userId,
+        club_id:    joinCodeData.club_id,
+        first_name: profile?.first_name ?? '',
+        last_name:  profile?.last_name ?? '',
+        level:      'intermediate',
+        status:     'active'
+      })
+      .select()
       .single()
 
-    if (student) {
-      await supabase.from('student_clubs').upsert({
-        student_id: student.id,
-        club_id:    joinCodeData.club_id
-      }, { onConflict: 'student_id,club_id' })
-
-      await supabase.from('join_codes')
-        .update({ uses: joinCodeData.uses + 1 })
-        .eq('id', joinCodeData.id)
-    }
+    student = newStudent
   }
+
+  if (student) {
+    await supabase.from('student_clubs').upsert({
+      student_id: student.id,
+      club_id:    joinCodeData.club_id
+    }, { onConflict: 'student_id,club_id' })
+
+    await supabase.from('join_codes')
+      .update({ uses: joinCodeData.uses + 1 })
+      .eq('id', joinCodeData.id)
+  }
+}
 
   async function handleLogin() {
     if (!email || !password) { setError('Compila tutti i campi'); return }
