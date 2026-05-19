@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useClub } from '../club-context'
 
 interface Student {
   id: string
@@ -18,7 +19,6 @@ interface Student {
 
 export default function AlunniPage() {
   const [students, setStudents] = useState<Student[]>([])
-  const [club, setClub] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -30,6 +30,7 @@ export default function AlunniPage() {
     first_name: '', last_name: '', email: '',
     phone: '', level: 'intermediate', group_name: ''
   })
+  const { activeClub } = useClub()
   const router = useRouter()
   const supabase = createClient()
 
@@ -40,27 +41,36 @@ export default function AlunniPage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    if (activeClub) loadData()
+  }, [activeClub])
 
   async function loadData() {
+    if (!activeClub) return
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('club_id, clubs(id, name)')
-      .eq('id', user.id)
-      .single()
+    // Usa student_clubs per filtrare correttamente per club
+    const { data: studentClubIds } = await supabase
+      .from('student_clubs')
+      .select('student_id')
+      .eq('club_id', activeClub.id)
 
-    if (profile?.clubs) {
-      setClub(profile.clubs as any)
-      const { data } = await supabase
-        .from('students')
-        .select('*')
-        .eq('club_id', (profile.clubs as any).id)
-        .order('joined_at', { ascending: false })
-      setStudents(data ?? [])
+    const ids = studentClubIds?.map((s: any) => s.student_id) ?? []
+
+    if (ids.length === 0) {
+      setStudents([])
+      setLoading(false)
+      return
     }
+
+    const { data } = await supabase
+      .from('students')
+      .select('*')
+      .in('id', ids)
+      .order('joined_at', { ascending: false })
+
+    setStudents(data ?? [])
     setLoading(false)
   }
 
@@ -86,7 +96,7 @@ export default function AlunniPage() {
   }
 
   async function handleSave() {
-    if (!club) return
+    if (!activeClub) return
     if (!form.first_name || !form.last_name) {
       setError('Nome e cognome sono obbligatori')
       return
@@ -95,7 +105,6 @@ export default function AlunniPage() {
     setError('')
 
     if (editingStudent) {
-      // MODIFICA
       const { error: updateError } = await supabase
         .from('students')
         .update({
@@ -114,11 +123,11 @@ export default function AlunniPage() {
         return
       }
     } else {
-      // NUOVO
-      const { error: studentError } = await supabase
+      // Inserisci nuovo student
+      const { data: newStudent, error: studentError } = await supabase
         .from('students')
         .insert({
-          club_id:    club.id,
+          club_id:    activeClub.id,
           first_name: form.first_name,
           last_name:  form.last_name,
           email:      form.email || null,
@@ -127,11 +136,21 @@ export default function AlunniPage() {
           group_name: form.group_name || null,
           status:     'active'
         })
+        .select()
+        .single()
 
       if (studentError) {
         setError('Errore: ' + studentError.message)
         setSaving(false)
         return
+      }
+
+      // Collega a student_clubs
+      if (newStudent) {
+        await supabase.from('student_clubs').insert({
+          student_id: newStudent.id,
+          club_id:    activeClub.id
+        })
       }
     }
 
@@ -168,11 +187,12 @@ export default function AlunniPage() {
   return (
     <div style={{ padding: isMobile ? '20px 16px' : '32px', fontFamily: 'system-ui', color: '#fff' }}>
 
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div>
           <div style={{ fontSize: '22px', fontWeight: '800' }}>Alunni</div>
-          <div style={{ fontSize: '13px', color: '#5a5a6a', marginTop: '4px' }}>{students.filter(s => s.status === 'active').length} attivi · {students.length} totali</div>
+          <div style={{ fontSize: '13px', color: '#5a5a6a', marginTop: '4px' }}>
+            {students.filter(s => s.status === 'active').length} attivi · {students.length} totali
+          </div>
         </div>
         <button onClick={openNew} style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           + Aggiungi
@@ -198,8 +218,10 @@ export default function AlunniPage() {
         <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '60px 20px', textAlign: 'center' }}>
           <div style={{ fontSize: '40px', marginBottom: '16px' }}>👥</div>
           <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '8px' }}>Nessun alunno ancora</div>
-          <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '24px' }}>Aggiungi il primo alunno del club</div>
-          <button onClick={openNew} style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '12px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>+ Aggiungi alunno</button>
+          <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '24px' }}>Aggiungi il primo alunno o manda un link invito</div>
+          <button onClick={openNew} style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '12px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
+            + Aggiungi alunno
+          </button>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -228,29 +250,27 @@ export default function AlunniPage() {
                     </div>
                   )}
                 </div>
-                {/* Azioni */}
-<div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '6px', flexShrink: 0 }}>
-  <button onClick={() => openEdit(student)}
-    style={{ background: 'rgba(91,127,255,0.1)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>
-    ✏️ Modifica
-  </button>
-  <button onClick={() => toggleStatus(student)}
-    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#8b93a8', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-    {student.status === 'active' ? 'Pausa' : 'Riattiva'}
-  </button>
-</div>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '6px', flexShrink: 0 }}>
+                  <button onClick={() => openEdit(student)}
+                    style={{ background: 'rgba(91,127,255,0.1)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                    ✏️ Modifica
+                  </button>
+                  <button onClick={() => toggleStatus(student)}
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#8b93a8', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    {student.status === 'active' ? 'Pausa' : 'Riattiva'}
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* MODAL aggiungi/modifica */}
+      {/* MODAL */}
       {showModal && (
         <div onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}>
           <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)', borderRadius: isMobile ? '20px 20px 0 0' : '20px', padding: '24px', width: '100%', maxWidth: isMobile ? '100%' : '460px', maxHeight: '90vh', overflowY: 'auto' }}>
-
             <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '6px' }}>
               {editingStudent ? 'Modifica alunno' : 'Aggiungi alunno'}
             </div>
