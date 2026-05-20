@@ -21,7 +21,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
-
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   useEffect(() => {
     function checkMobile() { setIsMobile(window.innerWidth < 768) }
     checkMobile()
@@ -34,6 +34,15 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       setUserEmail(user.email ?? '')
+
+      const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (profile?.role === 'super_admin') setIsSuperAdmin(true)
+
     }
     load()
   }, [])
@@ -55,14 +64,14 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   }
 
   const navItems = [
-    { label: 'Dashboard',  icon: '▦',  path: '/dashboard' },
-    { label: 'Lezioni',    icon: '📅', path: '/dashboard/lezioni' },
-    { label: 'Alunni',     icon: '👥', path: '/dashboard/alunni' },
-    { label: 'Notifiche',  icon: '🔔', path: '/dashboard/notifiche' },
-    { label: 'Analytics',  icon: '📊', path: '/dashboard/analytics' },
-    { label: 'Inviti',     icon: '🔗', path: '/dashboard/inviti' },
-    { label: 'Centri',     icon: '🏟️', path: '/dashboard/centri' },
-  ]
+  { label: 'Dashboard',  icon: '▦',  path: '/dashboard' },
+  { label: 'Lezioni',    icon: '📅', path: '/dashboard/lezioni' },
+  { label: 'Alunni',     icon: '👥', path: '/dashboard/alunni' },
+  { label: 'Notifiche',  icon: '🔔', path: '/dashboard/notifiche' },
+  { label: 'Analytics',  icon: '📊', path: '/dashboard/analytics' },
+  { label: 'Inviti',     icon: '🔗', path: '/dashboard/inviti' },
+  { label: 'Centri',     icon: '🏟️', path: '/dashboard/centri' },
+]
 
   const planColor: Record<string, string> = {
     free:    'rgba(255,255,255,0.3)',
@@ -136,7 +145,16 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
             Passa a Starter →
           </div>
         </div>
-      )}
+
+        {/* Bottone pannello admin solo per super admin */}
+{isSuperAdmin && (
+  <div
+    onClick={() => navigate('/superadmin')}
+    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 16px', borderRadius: '10px', margin: '2px 8px', cursor: 'pointer', background: 'rgba(245,166,35,0.08)', color: '#f5a623', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
+    <span style={{ fontSize: '18px', width: '24px', textAlign: 'center' }}>⚙️</span>
+    Pannello Admin
+  </div>
+)}
 
       {/* Nav */}
       <div style={{ flex: 1, padding: '12px 0' }}>
