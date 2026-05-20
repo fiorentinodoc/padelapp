@@ -126,8 +126,8 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
         )}
       </div>
 
-      {/* Banner upgrade per free */}
-      {activeClub?.plan === 'free' && (
+      {/* Banner upgrade per free — nascosto per super admin */}
+{activeClub?.plan === 'free' && userEmail !== 'gio.gori@gmail.com' && (
         <div style={{ margin: '10px 12px', background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.2)', borderRadius: '8px', padding: '10px 12px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: '#5b7fff', marginBottom: '4px' }}>Piano Free</div>
           <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginBottom: '6px' }}>1 centro · max 20 alunni</div>
