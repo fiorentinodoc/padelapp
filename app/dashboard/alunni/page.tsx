@@ -50,7 +50,6 @@ export default function AlunniPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    // Usa student_clubs per filtrare correttamente per club
     const { data: studentClubIds } = await supabase
       .from('student_clubs')
       .select('student_id')
@@ -97,41 +96,41 @@ export default function AlunniPage() {
 
   async function handleSave() {
     if (!activeClub) return
-    if (!form.first_name || !form.last_name) 
-      // Controlla limite alunni solo per nuovi inserimenti
-if (!editingStudent && activeClub) {
-  const { data: clubData } = await supabase
-    .from('clubs')
-    .select('plan, max_students')
-    .eq('id', activeClub.id)
-    .single()
-
-  const planLimits: Record<string, number> = {
-    free:    20,
-    starter: 100,
-    pro:     99999
-  }
-
-  const maxStudents = planLimits[clubData?.plan ?? 'free']
-  const currentCount = students.length
-
-  if (currentCount >= maxStudents) {
-    setError(
-      clubData?.plan === 'free'
-        ? '⚠️ Piano Free: limite di 20 alunni raggiunto. Passa a Starter per fino a 100 alunni.'
-        : clubData?.plan === 'starter'
-        ? '⚠️ Piano Starter: limite di 100 alunni raggiunto. Passa a Pro per alunni illimitati.'
-        : 'Limite alunni raggiunto.'
-    )
-    setSaving(false)
-    return
-  }
-}
+    if (!form.first_name || !form.last_name) {
       setError('Nome e cognome sono obbligatori')
       return
     }
     setSaving(true)
     setError('')
+
+    // Controlla limite alunni solo per nuovi inserimenti
+    if (!editingStudent) {
+      const { data: clubData } = await supabase
+        .from('clubs')
+        .select('plan, max_students')
+        .eq('id', activeClub.id)
+        .single()
+
+      const planLimits: Record<string, number> = {
+        free:    20,
+        starter: 100,
+        pro:     99999
+      }
+
+      const maxStudents = planLimits[clubData?.plan ?? 'free']
+
+      if (students.length >= maxStudents) {
+        setError(
+          clubData?.plan === 'free'
+            ? '⚠️ Piano Free: limite di 20 alunni raggiunto. Passa a Starter per fino a 100 alunni.'
+            : clubData?.plan === 'starter'
+            ? '⚠️ Piano Starter: limite di 100 alunni raggiunto. Passa a Pro per alunni illimitati.'
+            : 'Limite alunni raggiunto.'
+        )
+        setSaving(false)
+        return
+      }
+    }
 
     if (editingStudent) {
       const { error: updateError } = await supabase
@@ -152,7 +151,6 @@ if (!editingStudent && activeClub) {
         return
       }
     } else {
-      // Inserisci nuovo student
       const { data: newStudent, error: studentError } = await supabase
         .from('students')
         .insert({
@@ -174,7 +172,6 @@ if (!editingStudent && activeClub) {
         return
       }
 
-      // Collega a student_clubs
       if (newStudent) {
         await supabase.from('student_clubs').insert({
           student_id: newStudent.id,
