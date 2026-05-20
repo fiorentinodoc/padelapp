@@ -9,6 +9,7 @@ interface Club {
   id: string
   name: string
   role: string
+  plan: string
 }
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
@@ -53,15 +54,21 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     setMenuOpen(false)
   }
 
- const navItems = [
-  { label: 'Dashboard',  icon: '▦',  path: '/dashboard' },
-  { label: 'Lezioni',    icon: '📅', path: '/dashboard/lezioni' },
-  { label: 'Alunni',     icon: '👥', path: '/dashboard/alunni' },
-  { label: 'Notifiche',  icon: '🔔', path: '/dashboard/notifiche' },
-  { label: 'Analytics',  icon: '📊', path: '/dashboard/analytics' },
-  { label: 'Inviti',     icon: '🔗', path: '/dashboard/inviti' },
-  { label: 'Centri',     icon: '🏟️', path: '/dashboard/centri' },
-]
+  const navItems = [
+    { label: 'Dashboard',  icon: '▦',  path: '/dashboard' },
+    { label: 'Lezioni',    icon: '📅', path: '/dashboard/lezioni' },
+    { label: 'Alunni',     icon: '👥', path: '/dashboard/alunni' },
+    { label: 'Notifiche',  icon: '🔔', path: '/dashboard/notifiche' },
+    { label: 'Analytics',  icon: '📊', path: '/dashboard/analytics' },
+    { label: 'Inviti',     icon: '🔗', path: '/dashboard/inviti' },
+    { label: 'Centri',     icon: '🏟️', path: '/dashboard/centri' },
+  ]
+
+  const planColor: Record<string, string> = {
+    free:    'rgba(255,255,255,0.3)',
+    starter: '#5b7fff',
+    pro:     '#c8f53a'
+  }
 
   const SidebarInner = () => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -86,8 +93,8 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
             <div style={{ fontSize: '13px', fontWeight: '600', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {activeClub?.name ?? 'Nessun centro'}
             </div>
-            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>
-              {activeClub?.role === 'owner' ? 'Proprietario' : 'Manager'}
+            <div style={{ fontSize: '10px', color: planColor[activeClub?.plan ?? 'free'], fontWeight: '600' }}>
+              Piano {activeClub?.plan ?? 'free'}
             </div>
           </div>
           {clubs.length > 1 && (
@@ -106,7 +113,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '13px', color: '#fff', fontWeight: activeClub?.id === club.id ? '700' : '400' }}>{club.name}</div>
-                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>{club.role === 'owner' ? 'Proprietario' : 'Manager'}</div>
+                  <div style={{ fontSize: '10px', color: planColor[club.plan] ?? 'rgba(255,255,255,0.3)', fontWeight: '600' }}>Piano {club.plan}</div>
                 </div>
                 {activeClub?.id === club.id && <div style={{ color: '#c8f53a', fontSize: '12px' }}>✓</div>}
               </div>
@@ -118,6 +125,18 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
           </div>
         )}
       </div>
+
+      {/* Banner upgrade per free */}
+      {activeClub?.plan === 'free' && (
+        <div style={{ margin: '10px 12px', background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.2)', borderRadius: '8px', padding: '10px 12px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#5b7fff', marginBottom: '4px' }}>Piano Free</div>
+          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginBottom: '6px' }}>1 centro · max 20 alunni</div>
+          <div style={{ fontSize: '11px', color: '#5b7fff', fontWeight: '600', cursor: 'pointer' }}
+            onClick={() => navigate('/dashboard/abbonamento')}>
+            Passa a Starter →
+          </div>
+        </div>
+      )}
 
       {/* Nav */}
       <div style={{ flex: 1, padding: '12px 0' }}>

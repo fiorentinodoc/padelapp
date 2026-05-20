@@ -54,37 +54,94 @@ export default function CentriPage() {
     setLoading(false)
   }
 
-  async function handleSave() {
-    if (!form.name) { setError('Il nome del centro è obbligatorio'); return }
-    setSaving(true)
-    setError('')
+ async function handleSave() {
+  if (!form.name) { setError('Il nome del centro è obbligatorio'); return }
+  setSaving(true)
+  setError('')
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
 
-    const slug = form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
-
-    // Crea il nuovo club
-    const { data: newClub, error: clubError } = await supabase
-      .from('clubs')
-      .insert({ name: form.name, slug, plan: 'free', max_students: 20 })
-      .select()
-      .single()
-
-    if (clubError) { setError('Errore: ' + clubError.message); setSaving(false); return }
-
-    // Collega l'istruttore come owner
-    await supabase.from('instructor_clubs').insert({
-      profile_id: user.id,
-      club_id:    newClub.id,
-      role:       'owner'
-    })
-
-    setShowModal(false)
-    setForm({ name: '', address: '' })
-    await loadData()
-    setSaving(false)
+  // Controlla limite centri per piano
+  const totalClubs = clubs.length
+  const planLimits: Record<string, number> = {
+    free:    1,
+    starter: 3,
+    pro:     999
   }
+  // Controlla limite alunni solo per nuovi inserimenti
+if (!editingStudent && activeClub) {
+  const { data: clubData } = await supabase
+    .from('clubs')
+    .select('plan, max_students')
+    .eq('id', activeClub.id)
+    .single()
+
+  const planLimits: Record<string, number> = {
+    free:    20,
+    starter: 100,
+    pro:     99999
+  }
+
+  const maxStudents = planLimits[clubData?.plan ?? 'free']
+  const currentCount = students.length
+
+  if (currentCount >= maxStudents) {
+    setError(
+      clubData?.plan === 'free'
+        ? '⚠️ Piano Free: limite di 20 alunni raggiunto. Passa a Starter per fino a 100 alunni.'
+        : clubData?.plan === 'starter'
+        ? '⚠️ Piano Starter: limite di 100 alunni raggiunto. Passa a Pro per alunni illimitati.'
+        : 'Limite alunni raggiunto.'
+    )
+    setSaving(false)
+    return
+  }
+}
+
+  // Prendi il piano del primo club
+  const { data: firstClub } = await supabase
+    .from('clubs')
+    .select('plan')
+    .eq('id', clubs[0]?.id)
+    .single()
+
+  const plan = firstClub?.plan ?? 'free'
+  const maxCourts = planLimits[plan] ?? 1
+
+  if (totalClubs >= maxCourts) {
+    setError(
+      plan === 'free'
+        ? '⚠️ Piano Free: puoi avere solo 1 centro. Passa a Starter per aggiungerne fino a 3.'
+        : plan === 'starter'
+        ? '⚠️ Piano Starter: hai raggiunto il limite di 3 centri. Passa a Pro per centri illimitati.'
+        : 'Limite centri raggiunto.'
+    )
+    setSaving(false)
+    return
+  }
+
+  const slug = form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
+
+  const { data: newClub, error: clubError } = await supabase
+    .from('clubs')
+    .insert({ name: form.name, slug, plan: 'free', max_students: 20 })
+    .select()
+    .single()
+
+  if (clubError) { setError('Errore: ' + clubError.message); setSaving(false); return }
+
+  await supabase.from('instructor_clubs').insert({
+    profile_id: user.id,
+    club_id:    newClub.id,
+    role:       'owner'
+  })
+
+  setShowModal(false)
+  setForm({ name: '', address: '' })
+  await loadData()
+  setSaving(false)
+}
 
   async function handleDelete(clubId: string) {
     if (!confirm('Eliminare questo centro? Verranno eliminati anche tutti i dati associati.')) return

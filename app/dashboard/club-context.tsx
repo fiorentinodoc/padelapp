@@ -7,6 +7,7 @@ interface Club {
   id: string
   name: string
   role: string
+  plan: string
 }
 
 interface ClubContextType {
@@ -33,19 +34,20 @@ export function ClubProvider({ children }: { children: React.ReactNode }) {
 
       const { data: ic } = await supabase
         .from('instructor_clubs')
-        .select('role, clubs(id, name)')
+        .select('role, clubs(id, name, plan)')
         .eq('profile_id', user.id)
 
       if (ic && ic.length > 0) {
         const clubList = ic.map((c: any) => ({
           id:   c.clubs.id,
           name: c.clubs.name,
-          role: c.role
+          role: c.role,
+          plan: c.clubs.plan
         }))
         setClubs(clubList)
 
         const savedId = localStorage.getItem('activeClubId')
-        const saved   = clubList.find(c => c.id === savedId)
+        const saved   = clubList.find((c: Club) => c.id === savedId)
         setActiveClubState(saved ?? clubList[0])
       }
     }
