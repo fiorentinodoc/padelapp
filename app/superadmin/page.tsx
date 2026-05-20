@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 interface Request {
   id: string
@@ -24,13 +24,15 @@ interface Club {
   created_at: string
 }
 
-export default function SuperAdminPage() {
+function SuperAdminContent() {
   const [requests, setRequests] = useState<Request[]>([])
   const [clubs, setClubs] = useState<Club[]>([])
   const [loading, setLoading] = useState(true)
+  const [choosing, setChoosing] = useState(false)
   const [tab, setTab] = useState<'requests' | 'clubs'>('requests')
   const [approving, setApproving] = useState<string | null>(null)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   useEffect(() => { loadData() }, [])
@@ -48,6 +50,19 @@ export default function SuperAdminPage() {
     if (profile?.role !== 'super_admin') {
       router.push('/dashboard')
       return
+    }
+
+    // Controlla se ha club da gestire
+    if (searchParams.get('choose') === 'true') {
+      const { data: ic } = await supabase
+        .from('instructor_clubs')
+        .select('club_id')
+        .eq('profile_id', user.id)
+        .limit(1)
+
+      if (ic && ic.length > 0) {
+        setChoosing(true)
+      }
     }
 
     const { data: reqs } = await supabase
@@ -126,6 +141,31 @@ export default function SuperAdminPage() {
     </div>
   )
 
+  if (choosing) return (
+    <div style={{ minHeight: '100vh', background: '#0e1117', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', padding: '20px' }}>
+      <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '40px', width: '100%', maxWidth: '420px', textAlign: 'center' }}>
+        <div style={{ fontSize: '26px', fontWeight: '800', color: '#c8f53a', marginBottom: '24px' }}>padel●</div>
+        <div style={{ fontSize: '20px', fontWeight: '700', color: '#fff', marginBottom: '8px' }}>Come vuoi accedere?</div>
+        <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '32px' }}>Scegli la modalità di accesso</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <button
+            onClick={() => setChoosing(false)}
+            style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '16px', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer' }}>
+            ⚙️ Pannello Super Admin
+          </button>
+          <button
+            onClick={() => router.push('/dashboard')}
+            style={{ background: '#1e2535', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '16px', borderRadius: '12px', fontSize: '15px', fontWeight: '600', cursor: 'pointer' }}>
+            🎾 Dashboard Istruttore
+          </button>
+        </div>
+        <div style={{ marginTop: '20px' }}>
+          <span onClick={handleLogout} style={{ fontSize: '13px', color: '#5a5a6a', cursor: 'pointer' }}>Esci →</span>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div style={{ minHeight: '100vh', background: '#0e1117', fontFamily: 'system-ui', color: '#fff' }}>
 
@@ -135,9 +175,16 @@ export default function SuperAdminPage() {
           <div style={{ fontSize: '20px', fontWeight: '800', color: '#c8f53a' }}>padel●</div>
           <div style={{ fontSize: '13px', color: '#5a5a6a' }}>Super Admin</div>
         </div>
-        <button onClick={handleLogout} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#8b93a8', padding: '7px 14px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}>
-          Esci
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={() => router.push('/dashboard')}
+            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#8b93a8', padding: '7px 14px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}>
+            🎾 Dashboard
+          </button>
+          <button onClick={handleLogout}
+            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#8b93a8', padding: '7px 14px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer' }}>
+            Esci
+          </button>
+        </div>
       </div>
 
       <div style={{ padding: '32px' }}>
@@ -271,8 +318,19 @@ export default function SuperAdminPage() {
             </table>
           </div>
         )}
-
       </div>
     </div>
+  )
+}
+
+export default function SuperAdminPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: '100vh', background: '#0e1117', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c8f53a', fontFamily: 'system-ui' }}>
+        Caricamento...
+      </div>
+    }>
+      <SuperAdminContent />
+    </Suspense>
   )
 }

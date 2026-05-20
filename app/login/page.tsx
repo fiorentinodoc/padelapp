@@ -33,58 +33,57 @@ function LoginForm() {
   function switchMode(m: Mode) { reset(); setMode(m) }
 
   async function handleJoinCode(userId: string) {
-  if (!joinCode) return
+    if (!joinCode) return
 
-  const { data: joinCodeData } = await supabase
-    .from('join_codes')
-    .select('id, club_id, uses')
-    .eq('code', joinCode)
-    .eq('active', true)
-    .single()
-
-  if (!joinCodeData) return
-
-  // Crea lo student record se non esiste
-  let { data: student } = await supabase
-    .from('students')
-    .select('id')
-    .eq('profile_id', userId)
-    .single()
-
-  if (!student) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('first_name, last_name')
-      .eq('id', userId)
+    const { data: joinCodeData } = await supabase
+      .from('join_codes')
+      .select('id, club_id, uses')
+      .eq('code', joinCode)
+      .eq('active', true)
       .single()
 
-    const { data: newStudent } = await supabase
+    if (!joinCodeData) return
+
+    let { data: student } = await supabase
       .from('students')
-      .insert({
-        profile_id: userId,
-        club_id:    joinCodeData.club_id,
-        first_name: profile?.first_name ?? '',
-        last_name:  profile?.last_name ?? '',
-        level:      'intermediate',
-        status:     'active'
-      })
-      .select()
+      .select('id')
+      .eq('profile_id', userId)
       .single()
 
-    student = newStudent
-  }
+    if (!student) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('first_name, last_name')
+        .eq('id', userId)
+        .single()
 
-  if (student) {
-    await supabase.from('student_clubs').upsert({
-      student_id: student.id,
-      club_id:    joinCodeData.club_id
-    }, { onConflict: 'student_id,club_id' })
+      const { data: newStudent } = await supabase
+        .from('students')
+        .insert({
+          profile_id: userId,
+          club_id:    joinCodeData.club_id,
+          first_name: profile?.first_name ?? '',
+          last_name:  profile?.last_name ?? '',
+          level:      'intermediate',
+          status:     'active'
+        })
+        .select()
+        .single()
 
-    await supabase.from('join_codes')
-      .update({ uses: joinCodeData.uses + 1 })
-      .eq('id', joinCodeData.id)
+      student = newStudent
+    }
+
+    if (student) {
+      await supabase.from('student_clubs').upsert({
+        student_id: student.id,
+        club_id:    joinCodeData.club_id
+      }, { onConflict: 'student_id,club_id' })
+
+      await supabase.from('join_codes')
+        .update({ uses: joinCodeData.uses + 1 })
+        .eq('id', joinCodeData.id)
+    }
   }
-}
 
   async function handleLogin() {
     if (!email || !password) { setError('Compila tutti i campi'); return }
@@ -105,7 +104,17 @@ function LoginForm() {
         .single()
 
       if (profile?.role === 'super_admin') {
-        router.push('/superadmin')
+        const { data: ic } = await supabase
+          .from('instructor_clubs')
+          .select('club_id')
+          .eq('profile_id', user.id)
+          .limit(1)
+
+        if (ic && ic.length > 0) {
+          router.push('/superadmin?choose=true')
+        } else {
+          router.push('/superadmin')
+        }
       } else if (profile?.role === 'club_admin') {
         router.push('/dashboard')
       } else {
@@ -146,7 +155,6 @@ function LoginForm() {
 
     if (data.user) {
       if (isInstructor) {
-        // Controlla invito
         const { data: invite } = await supabase
           .from('club_invites')
           .select('*')
@@ -193,7 +201,6 @@ function LoginForm() {
           role:       'student'
         }).eq('id', data.user.id)
 
-        // Collega al club se c'è un codice invito
         await handleJoinCode(data.user.id)
       }
 
@@ -298,7 +305,6 @@ function LoginForm() {
         {/* ── REGISTRAZIONE ── */}
         {mode === 'register' && (
           <>
-            {/* Toggle solo se non c'è codice invito */}
             {!joinCode && (
               <div style={{ display: 'flex', background: '#1e2535', borderRadius: '10px', padding: '4px', marginBottom: '20px' }}>
                 <div onClick={() => setIsInstructor(false)}
