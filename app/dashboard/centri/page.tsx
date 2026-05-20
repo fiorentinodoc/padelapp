@@ -69,35 +69,7 @@ export default function CentriPage() {
     starter: 3,
     pro:     999
   }
-  // Controlla limite alunni solo per nuovi inserimenti
-if (!editingStudent && activeClub) {
-  const { data: clubData } = await supabase
-    .from('clubs')
-    .select('plan, max_students')
-    .eq('id', activeClub.id)
-    .single()
-
-  const planLimits: Record<string, number> = {
-    free:    20,
-    starter: 100,
-    pro:     99999
-  }
-
-  const maxStudents = planLimits[clubData?.plan ?? 'free']
-  const currentCount = students.length
-
-  if (currentCount >= maxStudents) {
-    setError(
-      clubData?.plan === 'free'
-        ? '⚠️ Piano Free: limite di 20 alunni raggiunto. Passa a Starter per fino a 100 alunni.'
-        : clubData?.plan === 'starter'
-        ? '⚠️ Piano Starter: limite di 100 alunni raggiunto. Passa a Pro per alunni illimitati.'
-        : 'Limite alunni raggiunto.'
-    )
-    setSaving(false)
-    return
-  }
-}
+  
 
   // Prendi il piano del primo club
   const { data: firstClub } = await supabase
