@@ -14,6 +14,7 @@ interface Club {
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
   const [userEmail, setUserEmail] = useState('')
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [clubMenuOpen, setClubMenuOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -21,7 +22,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+
   useEffect(() => {
     function checkMobile() { setIsMobile(window.innerWidth < 768) }
     checkMobile()
@@ -36,13 +37,12 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       setUserEmail(user.email ?? '')
 
       const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single()
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
 
-  if (profile?.role === 'super_admin') setIsSuperAdmin(true)
-
+      if (profile?.role === 'super_admin') setIsSuperAdmin(true)
     }
     load()
   }, [])
@@ -64,14 +64,14 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   }
 
   const navItems = [
-  { label: 'Dashboard',  icon: '▦',  path: '/dashboard' },
-  { label: 'Lezioni',    icon: '📅', path: '/dashboard/lezioni' },
-  { label: 'Alunni',     icon: '👥', path: '/dashboard/alunni' },
-  { label: 'Notifiche',  icon: '🔔', path: '/dashboard/notifiche' },
-  { label: 'Analytics',  icon: '📊', path: '/dashboard/analytics' },
-  { label: 'Inviti',     icon: '🔗', path: '/dashboard/inviti' },
-  { label: 'Centri',     icon: '🏟️', path: '/dashboard/centri' },
-]
+    { label: 'Dashboard',  icon: '▦',  path: '/dashboard' },
+    { label: 'Lezioni',    icon: '📅', path: '/dashboard/lezioni' },
+    { label: 'Alunni',     icon: '👥', path: '/dashboard/alunni' },
+    { label: 'Notifiche',  icon: '🔔', path: '/dashboard/notifiche' },
+    { label: 'Analytics',  icon: '📊', path: '/dashboard/analytics' },
+    { label: 'Inviti',     icon: '🔗', path: '/dashboard/inviti' },
+    { label: 'Centri',     icon: '🏟️', path: '/dashboard/centri' },
+  ]
 
   const planColor: Record<string, string> = {
     free:    'rgba(255,255,255,0.3)',
@@ -136,7 +136,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Banner upgrade per free — nascosto per super admin */}
-{activeClub?.plan === 'free' && userEmail !== 'gio.gori@gmail.com' && (
+      {activeClub?.plan === 'free' && !isSuperAdmin && (
         <div style={{ margin: '10px 12px', background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.2)', borderRadius: '8px', padding: '10px 12px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: '#5b7fff', marginBottom: '4px' }}>Piano Free</div>
           <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginBottom: '6px' }}>1 centro · max 20 alunni</div>
@@ -145,16 +145,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
             Passa a Starter →
           </div>
         </div>
-
-        {/* Bottone pannello admin solo per super admin */}
-{isSuperAdmin && (
-  <div
-    onClick={() => navigate('/superadmin')}
-    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 16px', borderRadius: '10px', margin: '2px 8px', cursor: 'pointer', background: 'rgba(245,166,35,0.08)', color: '#f5a623', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
-    <span style={{ fontSize: '18px', width: '24px', textAlign: 'center' }}>⚙️</span>
-    Pannello Admin
-  </div>
-)}
+      )}
 
       {/* Nav */}
       <div style={{ flex: 1, padding: '12px 0' }}>
@@ -169,6 +160,16 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
             </div>
           )
         })}
+
+        {/* Bottone pannello admin solo per super admin */}
+        {isSuperAdmin && (
+          <div
+            onClick={() => navigate('/superadmin')}
+            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 16px', borderRadius: '10px', margin: '8px 8px 2px', cursor: 'pointer', background: 'rgba(245,166,35,0.08)', color: '#f5a623', fontSize: '14px', fontWeight: '600' }}>
+            <span style={{ fontSize: '18px', width: '24px', textAlign: 'center' }}>⚙️</span>
+            Pannello Admin
+          </div>
+        )}
       </div>
 
       {/* User */}
