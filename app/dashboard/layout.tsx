@@ -70,7 +70,9 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     { label: 'Notifiche',  icon: '🔔', path: '/dashboard/notifiche' },
     { label: 'Analytics',  icon: '📊', path: '/dashboard/analytics' },
     { label: 'Inviti',     icon: '🔗', path: '/dashboard/inviti' },
+    { label: 'Abbonamento', icon: '💳', path: '/dashboard/abbonamento' },
     { label: 'Centri',     icon: '🏟️', path: '/dashboard/centri' },
+    
   ]
 
   const planColor: Record<string, string> = {
