@@ -29,7 +29,25 @@ const ClubContext = createContext<ClubContextType>({
 
 export function ClubProvider({ children }: { children: React.ReactNode }) {
   const [clubs, setClubs] = useState<Club[]>([])
-  const [activeClub, setActiveClubState] = useState<Club | null>(null)
+
+  // Inizializza subito dal localStorage per evitare flash tema
+  const [activeClub, setActiveClubState] = useState<Club | null>(() => {
+    if (typeof window === 'undefined') return null
+    const theme = localStorage.getItem('clubTheme') ?? 'dark'
+    const color = localStorage.getItem('clubColor') ?? '#c8f53a'
+    const id    = localStorage.getItem('activeClubId') ?? ''
+    if (!id) return null
+    return {
+      id,
+      name:          '',
+      role:          '',
+      plan:          'free',
+      primary_color: color,
+      logo_url:      null,
+      theme
+    } as Club
+  })
+
   const supabase = createClient()
 
   useEffect(() => { load() }, [])
@@ -60,7 +78,8 @@ export function ClubProvider({ children }: { children: React.ReactNode }) {
       const active  = saved ?? clubList[0]
       setActiveClubState(active)
 
-      // Salva tema e colore nel localStorage per applicazione immediata
+      // Aggiorna localStorage con dati freschi
+      localStorage.setItem('activeClubId', active.id)
       localStorage.setItem('clubTheme', active.theme)
       localStorage.setItem('clubColor', active.primary_color)
     }
@@ -89,7 +108,6 @@ export function useClub() {
 export function useTheme() {
   const { activeClub } = useContext(ClubContext)
 
-  // Leggi dal localStorage per applicazione immediata (evita flash)
   const storedTheme = typeof window !== 'undefined' ? localStorage.getItem('clubTheme') : null
   const storedColor = typeof window !== 'undefined' ? localStorage.getItem('clubColor') : null
 
@@ -99,13 +117,13 @@ export function useTheme() {
   return {
     isDark,
     pc,
-    bg:        isDark ? '#0e1117'                : '#f0ede8',
-    surface:   isDark ? '#161b27'                : '#ffffff',
-    surface2:  isDark ? '#1e2535'                : '#ebe8e0',
-    border:    isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
-    text:      isDark ? '#ffffff'                : '#0e1117',
-    textSub:   isDark ? 'rgba(255,255,255,0.5)'  : 'rgba(0,0,0,0.5)',
-    textMuted: isDark ? '#5a5a6a'                : '#8a8a9a',
-    cardBorder:isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
+    bg:         isDark ? '#0e1117'                : '#f0ede8',
+    surface:    isDark ? '#161b27'                : '#ffffff',
+    surface2:   isDark ? '#1e2535'                : '#ebe8e0',
+    border:     isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
+    text:       isDark ? '#ffffff'                : '#0e1117',
+    textSub:    isDark ? 'rgba(255,255,255,0.5)'  : 'rgba(0,0,0,0.5)',
+    textMuted:  isDark ? '#5a5a6a'                : '#8a8a9a',
+    cardBorder: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
   }
 }
