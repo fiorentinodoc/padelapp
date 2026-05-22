@@ -3,15 +3,13 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useClub, useTheme } from '../club-context'
 
 interface Club {
   id: string
   name: string
-  slug: string
+  address: string | null
   plan: string
-  max_students: number
-  role: string
-  created_at: string
 }
 
 export default function CentriPage() {
@@ -20,8 +18,11 @@ export default function CentriPage() {
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [editingClub, setEditingClub] = useState<Club | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [form, setForm] = useState({ name: '', address: '' })
+  const { activeClub, setActiveClub } = useClub()
+  const { bg, surface, surface2, border, text, textSub, textMuted, pc } = useTheme()
   const router = useRouter()
   const supabase = createClient()
 
@@ -38,194 +39,194 @@ export default function CentriPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    const { data: instructorClubs } = await supabase
+    const { data: ic } = await supabase
       .from('instructor_clubs')
-      .select('role, clubs(*)')
+      .select('clubs(id, name, address, plan)')
       .eq('profile_id', user.id)
-      .order('created_at', { ascending: true })
 
-    if (instructorClubs) {
-      setClubs(instructorClubs.map((ic: any) => ({
-        ...ic.clubs,
-        role: ic.role
-      })))
-    }
-
+    const clubList = ic?.map((c: any) => c.clubs).filter(Boolean) ?? []
+    setClubs(clubList)
     setLoading(false)
   }
 
- async function handleSave() {
-  if (!form.name) { setError('Il nome del centro è obbligatorio'); return }
-  setSaving(true)
-  setError('')
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
-
-  // Controlla limite centri per piano
-  const totalClubs = clubs.length
-  const planLimits: Record<string, number> = {
-    free:    1,
-    starter: 3,
-    pro:     999
+  function openNew() {
+    setEditingClub(null)
+    setForm({ name: '', address: '' })
+    setError('')
+    setShowModal(true)
   }
-  
 
-  // Prendi il piano del primo club
-  const { data: firstClub } = await supabase
-    .from('clubs')
-    .select('plan')
-    .eq('id', clubs[0]?.id)
-    .single()
+  function openEdit(club: Club) {
+    setEditingClub(club)
+    setForm({ name: club.name, address: club.address ?? '' })
+    setError('')
+    setShowModal(true)
+  }
 
-  const plan = firstClub?.plan ?? 'free'
-  const maxCourts = planLimits[plan] ?? 1
+  async function handleSave() {
+    if (!form.name) { setError('Il nome del centro è obbligatorio'); return }
+    setSaving(true)
+    setError('')
 
-  if (totalClubs >= maxCourts) {
-    setError(
-      plan === 'free'
-        ? '⚠️ Piano Free: puoi avere solo 1 centro. Passa a Starter per aggiungerne fino a 3.'
-        : plan === 'starter'
-        ? '⚠️ Piano Starter: hai raggiunto il limite di 3 centri. Passa a Pro per centri illimitati.'
-        : 'Limite centri raggiunto.'
-    )
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    if (editingClub) {
+      const { error: updateError } = await supabase
+        .from('clubs')
+        .update({ name: form.name, address: form.address || null })
+        .eq('id', editingClub.id)
+
+      if (updateError) { setError('Errore: ' + updateError.message); setSaving(false); return }
+    } else {
+      // Controlla limite centri
+      const planLimits: Record<string, number> = { free: 1, starter: 3, pro: 999 }
+      const { data: firstClub } = await supabase
+        .from('clubs').select('plan').eq('id', clubs[0]?.id).single()
+
+      const plan      = firstClub?.plan ?? 'free'
+      const maxCourts = planLimits[plan] ?? 1
+
+      if (clubs.length >= maxCourts) {
+        setError(
+          plan === 'free'
+            ? '⚠️ Piano Free: puoi avere solo 1 centro. Passa a Starter per aggiungerne fino a 3.'
+            : '⚠️ Piano Starter: hai raggiunto il limite di 3 centri. Passa a Pro per centri illimitati.'
+        )
+        setSaving(false)
+        return
+      }
+
+      const slug = form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
+      const { data: newClub, error: clubError } = await supabase
+        .from('clubs')
+        .insert({ name: form.name, address: form.address || null, slug, plan: 'free', max_students: 20 })
+        .select()
+        .single()
+
+      if (clubError) { setError('Errore: ' + clubError.message); setSaving(false); return }
+
+      await supabase.from('instructor_clubs').insert({
+        profile_id: user.id, club_id: newClub.id, role: 'owner'
+      })
+    }
+
+    setShowModal(false)
+    await loadData()
     setSaving(false)
-    return
   }
 
-  const slug = form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
-
-  const { data: newClub, error: clubError } = await supabase
-    .from('clubs')
-    .insert({ name: form.name, slug, plan: 'free', max_students: 20 })
-    .select()
-    .single()
-
-  if (clubError) { setError('Errore: ' + clubError.message); setSaving(false); return }
-
-  await supabase.from('instructor_clubs').insert({
-    profile_id: user.id,
-    club_id:    newClub.id,
-    role:       'owner'
-  })
-
-  setShowModal(false)
-  setForm({ name: '', address: '' })
-  await loadData()
-  setSaving(false)
-}
-
-  async function handleDelete(clubId: string) {
-    if (!confirm('Eliminare questo centro? Verranno eliminati anche tutti i dati associati.')) return
-
-    await supabase.from('instructor_clubs').delete().eq('club_id', clubId)
-    await supabase.from('clubs').delete().eq('id', clubId)
+  async function handleDelete(club: Club) {
+    if (!confirm(`Eliminare il centro "${club.name}"?\n\nATTENZIONE: verranno eliminati tutti i dati associati.`)) return
+    await supabase.from('instructor_clubs').delete().eq('club_id', club.id)
+    await supabase.from('lessons').delete().eq('club_id', club.id)
+    await supabase.from('students').delete().eq('club_id', club.id)
+    await supabase.from('clubs').delete().eq('id', club.id)
     await loadData()
   }
 
-  function setActive(club: Club) {
-    localStorage.setItem('activeClubId', club.id)
-    router.push('/dashboard')
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '11px 12px', background: surface2,
+    border: `1.5px solid ${border}`, borderRadius: '8px',
+    color: text, fontSize: '14px', outline: 'none', boxSizing: 'border-box'
+  }
+  const labelStyle: React.CSSProperties = {
+    fontSize: '11px', fontWeight: '700', color: textMuted,
+    textTransform: 'uppercase', letterSpacing: '0.5px',
+    display: 'block', marginBottom: '6px'
   }
 
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#c8f53a', fontFamily: 'system-ui' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: pc, fontFamily: 'system-ui', background: bg }}>
       Caricamento...
     </div>
   )
 
   return (
-    <div style={{ padding: isMobile ? '20px 16px' : '32px', fontFamily: 'system-ui', color: '#fff' }}>
+    <div style={{ padding: isMobile ? '20px 16px' : '32px', fontFamily: 'system-ui', color: text, background: bg, minHeight: '100vh' }}>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div>
-          <div style={{ fontSize: '22px', fontWeight: '800' }}>I tuoi centri</div>
-          <div style={{ fontSize: '13px', color: '#5a5a6a', marginTop: '4px' }}>{clubs.length} {clubs.length === 1 ? 'centro' : 'centri'} configurati</div>
+          <div style={{ fontSize: '22px', fontWeight: '800' }}>Centri</div>
+          <div style={{ fontSize: '13px', color: textMuted, marginTop: '4px' }}>
+            {clubs.length} {clubs.length === 1 ? 'centro' : 'centri'} attivi
+          </div>
         </div>
-        <button onClick={() => setShowModal(true)}
-          style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        <button onClick={openNew}
+          style={{ background: pc, border: 'none', color: '#0e1117', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           + Aggiungi centro
         </button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {clubs.map(club => (
-          <div key={club.id} style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1 }}>
-                <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(200,245,58,0.12)', border: '1px solid rgba(200,245,58,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', fontWeight: '800', color: '#c8f53a', flexShrink: 0 }}>
-                  {club.name.charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '4px' }}>{club.name}</div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '11px', background: club.role === 'owner' ? 'rgba(200,245,58,0.1)' : 'rgba(91,127,255,0.1)', color: club.role === 'owner' ? '#c8f53a' : '#5b7fff', padding: '2px 8px', borderRadius: '6px', fontWeight: '600' }}>
-                      {club.role === 'owner' ? '👑 Proprietario' : '👤 Manager'}
-                    </span>
-                    <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.06)', color: '#8b93a8', padding: '2px 8px', borderRadius: '6px' }}>
-                      Piano {club.plan}
-                    </span>
-                    <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.06)', color: '#8b93a8', padding: '2px 8px', borderRadius: '6px' }}>
-                      Max {club.max_students} alunni
-                    </span>
+      {clubs.length === 0 ? (
+        <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: '16px', padding: '60px 20px', textAlign: 'center' }}>
+          <div style={{ fontSize: '40px', marginBottom: '16px' }}>🏟️</div>
+          <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '8px' }}>Nessun centro ancora</div>
+          <button onClick={openNew}
+            style={{ background: pc, border: 'none', color: '#0e1117', padding: '12px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
+            + Aggiungi centro
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {clubs.map(club => (
+            <div key={club.id} style={{ background: surface, border: `1px solid ${activeClub?.id === club.id ? pc : border}`, borderLeft: `3px solid ${activeClub?.id === club.id ? pc : border}`, borderRadius: '14px', padding: '18px 20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: text }}>{club.name}</div>
+                    {activeClub?.id === club.id && (
+                      <span style={{ background: `${pc}18`, color: pc, border: `1px solid ${pc}30`, padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '700' }}>
+                        Attivo
+                      </span>
+                    )}
                   </div>
+                  {club.address && (
+                    <div style={{ fontSize: '13px', color: textMuted }}>📍 {club.address}</div>
+                  )}
+                  <div style={{ fontSize: '11px', color: textMuted, marginTop: '4px' }}>
+                    Piano: {club.plan}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                  <button onClick={() => openEdit(club)}
+                    style={{ background: 'rgba(91,127,255,0.1)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>
+                    ✏️ Modifica
+                  </button>
+                  {clubs.length > 1 && (
+                    <button onClick={() => handleDelete(club)}
+                      style={{ background: 'rgba(232,88,88,0.08)', border: '1px solid rgba(232,88,88,0.15)', color: '#e85858', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' }}>
+                      Elimina
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
-
-            {/* Azioni */}
-            <div style={{ display: 'flex', gap: '8px', marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.04)', flexWrap: 'wrap' }}>
-              <button onClick={() => setActive(club)}
-                style={{ flex: 1, background: 'rgba(200,245,58,0.1)', border: '1px solid rgba(200,245,58,0.2)', color: '#c8f53a', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                ▦ Gestisci
-              </button>
-              <button onClick={() => router.push('/dashboard/lezioni')}
-                style={{ flex: 1, background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                📅 Lezioni
-              </button>
-              {club.role === 'owner' && (
-                <button onClick={() => handleDelete(club.id)}
-                  style={{ background: 'rgba(232,88,88,0.08)', border: '1px solid rgba(232,88,88,0.2)', color: '#e85858', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                  Elimina
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-
-        {clubs.length === 0 && (
-          <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '60px 20px', textAlign: 'center' }}>
-            <div style={{ fontSize: '40px', marginBottom: '16px' }}>🏟️</div>
-            <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '8px' }}>Nessun centro ancora</div>
-            <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '24px' }}>Aggiungi il tuo primo centro padel</div>
-            <button onClick={() => setShowModal(true)}
-              style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '12px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
-              + Aggiungi centro
-            </button>
-          </div>
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* MODAL */}
       {showModal && (
         <div onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}>
-          <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)', borderRadius: isMobile ? '20px 20px 0 0' : '20px', padding: '28px', width: '100%', maxWidth: isMobile ? '100%' : '440px' }}>
-            <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '6px' }}>Nuovo centro</div>
-            <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '24px' }}>Aggiungi un nuovo centro padel</div>
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={{ fontSize: '11px', fontWeight: '700', color: '#8b93a8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>Nome centro *</label>
-              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-                placeholder="Es: Padel Club Roma Nord"
-                style={{ width: '100%', padding: '11px 12px', background: '#1e2535', border: '1.5px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#fff', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+          <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: isMobile ? '20px 20px 0 0' : '20px', padding: '24px', width: '100%', maxWidth: isMobile ? '100%' : '420px' }}>
+            <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '6px', color: text }}>
+              {editingClub ? 'Modifica centro' : 'Aggiungi centro'}
+            </div>
+            <div style={{ fontSize: '13px', color: textMuted, marginBottom: '20px' }}>
+              {editingClub ? editingClub.name : 'Inserisci i dati del nuovo centro'}
             </div>
 
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ fontSize: '11px', fontWeight: '700', color: '#8b93a8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>Indirizzo</label>
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Nome centro *</label>
+              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+                placeholder="Es: Padel Club Roma" style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: '20px' }}>
+              <label style={labelStyle}>Indirizzo</label>
               <input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })}
-                placeholder="Es: Via Roma 1, Milano"
-                style={{ width: '100%', padding: '11px 12px', background: '#1e2535', border: '1.5px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#fff', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+                placeholder="Es: Via Roma 1, Milano" style={inputStyle} />
             </div>
 
             {error && (
@@ -234,12 +235,12 @@ export default function CentriPage() {
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => { setShowModal(false); setError('') }}
-                style={{ flex: 1, padding: '13px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#8b93a8', borderRadius: '10px', fontSize: '14px', cursor: 'pointer' }}>
+                style={{ flex: 1, padding: '13px', background: 'transparent', border: `1px solid ${border}`, color: textSub, borderRadius: '10px', fontSize: '14px', cursor: 'pointer' }}>
                 Annulla
               </button>
               <button onClick={handleSave} disabled={saving}
-                style={{ flex: 2, padding: '13px', background: saving ? '#5a7a20' : '#c8f53a', border: 'none', color: '#0e1117', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: saving ? 'not-allowed' : 'pointer' }}>
-                {saving ? 'Salvataggio...' : 'Crea centro'}
+                style={{ flex: 2, padding: '13px', background: saving ? '#5a7a20' : pc, border: 'none', color: '#0e1117', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: saving ? 'not-allowed' : 'pointer' }}>
+                {saving ? 'Salvataggio...' : editingClub ? 'Salva modifiche' : 'Aggiungi centro'}
               </button>
             </div>
           </div>
