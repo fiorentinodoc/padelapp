@@ -57,13 +57,20 @@ export function ClubProvider({ children }: { children: React.ReactNode }) {
 
       const savedId = localStorage.getItem('activeClubId')
       const saved   = clubList.find((c: Club) => c.id === savedId)
-      setActiveClubState(saved ?? clubList[0])
+      const active  = saved ?? clubList[0]
+      setActiveClubState(active)
+
+      // Salva tema e colore nel localStorage per applicazione immediata
+      localStorage.setItem('clubTheme', active.theme)
+      localStorage.setItem('clubColor', active.primary_color)
     }
   }
 
   function setActiveClub(club: Club) {
     setActiveClubState(club)
     localStorage.setItem('activeClubId', club.id)
+    localStorage.setItem('clubTheme', club.theme)
+    localStorage.setItem('clubColor', club.primary_color)
   }
 
   function refreshClub() { load() }
@@ -78,21 +85,27 @@ export function ClubProvider({ children }: { children: React.ReactNode }) {
 export function useClub() {
   return useContext(ClubContext)
 }
+
 export function useTheme() {
   const { activeClub } = useContext(ClubContext)
-  const isDark = (activeClub?.theme ?? 'dark') === 'dark'
-  const pc     = activeClub?.primary_color ?? '#c8f53a'
+
+  // Leggi dal localStorage per applicazione immediata (evita flash)
+  const storedTheme = typeof window !== 'undefined' ? localStorage.getItem('clubTheme') : null
+  const storedColor = typeof window !== 'undefined' ? localStorage.getItem('clubColor') : null
+
+  const isDark = (activeClub?.theme ?? storedTheme ?? 'dark') === 'dark'
+  const pc     = activeClub?.primary_color ?? storedColor ?? '#c8f53a'
 
   return {
     isDark,
     pc,
-    bg:          isDark ? '#0e1117'              : '#f0ede8',
-    surface:     isDark ? '#161b27'              : '#ffffff',
-    surface2:    isDark ? '#1e2535'              : '#ebe8e0',
-    border:      isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
-    text:        isDark ? '#ffffff'              : '#0e1117',
-    textSub:     isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
-    textMuted:   isDark ? '#5a5a6a'              : '#8a8a9a',
-    cardBorder:  isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
+    bg:        isDark ? '#0e1117'                : '#f0ede8',
+    surface:   isDark ? '#161b27'                : '#ffffff',
+    surface2:  isDark ? '#1e2535'                : '#ebe8e0',
+    border:    isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
+    text:      isDark ? '#ffffff'                : '#0e1117',
+    textSub:   isDark ? 'rgba(255,255,255,0.5)'  : 'rgba(0,0,0,0.5)',
+    textMuted: isDark ? '#5a5a6a'                : '#8a8a9a',
+    cardBorder:isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
   }
 }
