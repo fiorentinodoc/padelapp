@@ -78,3 +78,21 @@ export function ClubProvider({ children }: { children: React.ReactNode }) {
 export function useClub() {
   return useContext(ClubContext)
 }
+export function useTheme() {
+  const { activeClub } = useContext(ClubContext)
+  const isDark = (activeClub?.theme ?? 'dark') === 'dark'
+  const pc     = activeClub?.primary_color ?? '#c8f53a'
+
+  return {
+    isDark,
+    pc,
+    bg:          isDark ? '#0e1117'              : '#f0ede8',
+    surface:     isDark ? '#161b27'              : '#ffffff',
+    surface2:    isDark ? '#1e2535'              : '#ebe8e0',
+    border:      isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
+    text:        isDark ? '#ffffff'              : '#0e1117',
+    textSub:     isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+    textMuted:   isDark ? '#5a5a6a'              : '#8a8a9a',
+    cardBorder:  isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
+  }
+}
