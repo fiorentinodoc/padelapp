@@ -10,6 +10,8 @@ interface Club {
   name: string
   role: string
   plan: string
+  primary_color: string
+  logo_url: string | null
 }
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
@@ -22,6 +24,9 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
+
+  // Colore primario dinamico
+  const pc = activeClub?.primary_color ?? '#c8f53a'
 
   useEffect(() => {
     function checkMobile() { setIsMobile(window.innerWidth < 768) }
@@ -64,28 +69,35 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   }
 
   const navItems = [
-    { label: 'Dashboard',  icon: '▦',  path: '/dashboard' },
-    { label: 'Lezioni',    icon: '📅', path: '/dashboard/lezioni' },
-    { label: 'Alunni',     icon: '👥', path: '/dashboard/alunni' },
-    { label: 'Notifiche',  icon: '🔔', path: '/dashboard/notifiche' },
-    { label: 'Analytics',  icon: '📊', path: '/dashboard/analytics' },
-    { label: 'Inviti',     icon: '🔗', path: '/dashboard/inviti' },
-    { label: 'Abbonamento', icon: '💳', path: '/dashboard/abbonamento' },
-    { label: 'Centri',     icon: '🏟️', path: '/dashboard/centri' },
-    
+    { label: 'Dashboard',    icon: '▦',  path: '/dashboard' },
+    { label: 'Lezioni',      icon: '📅', path: '/dashboard/lezioni' },
+    { label: 'Alunni',       icon: '👥', path: '/dashboard/alunni' },
+    { label: 'Notifiche',    icon: '🔔', path: '/dashboard/notifiche' },
+    { label: 'Analytics',    icon: '📊', path: '/dashboard/analytics' },
+    { label: 'Inviti',       icon: '🔗', path: '/dashboard/inviti' },
+    { label: 'Abbonamento',  icon: '💳', path: '/dashboard/abbonamento' },
+    { label: 'Personalizza', icon: '🎨', path: '/dashboard/personalizzazione' },
+    { label: 'Centri',       icon: '🏟️', path: '/dashboard/centri' },
   ]
 
   const planColor: Record<string, string> = {
     free:    'rgba(255,255,255,0.3)',
     starter: '#5b7fff',
-    pro:     '#c8f53a'
+    pro:     pc
   }
 
   const SidebarInner = () => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
       {/* Logo */}
       <div style={{ padding: '24px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ fontSize: '20px', fontWeight: '800', color: '#c8f53a' }}>padel●</div>
+        {activeClub?.logo_url ? (
+          <img src={activeClub.logo_url} alt="Logo" style={{ maxHeight: '36px', maxWidth: '140px', objectFit: 'contain' }} />
+        ) : (
+          <div style={{ fontSize: '20px', fontWeight: '800', color: pc }}>
+            {activeClub?.name ?? 'remate'}●
+          </div>
+        )}
       </div>
 
       {/* Selettore centro */}
@@ -93,11 +105,9 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
         <div style={{ fontSize: '10px', fontWeight: '700', color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>
           Centro attivo
         </div>
-        <div
-          onClick={() => setClubMenuOpen(!clubMenuOpen)}
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '8px 10px', cursor: clubs.length > 1 ? 'pointer' : 'default' }}
-        >
-          <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'rgba(200,245,58,0.15)', border: '1px solid rgba(200,245,58,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', color: '#c8f53a', flexShrink: 0 }}>
+        <div onClick={() => setClubMenuOpen(!clubMenuOpen)}
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '8px 10px', cursor: clubs.length > 1 ? 'pointer' : 'default' }}>
+          <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: `${pc}18`, border: `1px solid ${pc}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', color: pc, flexShrink: 0 }}>
             {activeClub?.name.charAt(0).toUpperCase() ?? '?'}
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -117,20 +127,20 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
         {clubMenuOpen && clubs.length > 1 && (
           <div style={{ position: 'absolute', top: '100%', left: '16px', right: '16px', background: '#1e2535', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', zIndex: 100, overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
             {clubs.map(club => (
-              <div key={club.id} onClick={() => switchClub(club)}
-                style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', background: activeClub?.id === club.id ? 'rgba(200,245,58,0.08)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'rgba(200,245,58,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', color: '#c8f53a' }}>
+              <div key={club.id} onClick={() => switchClub(club as Club)}
+                style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', background: activeClub?.id === club.id ? `${pc}10` : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: `${pc}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', color: pc }}>
                   {club.name.charAt(0).toUpperCase()}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '13px', color: '#fff', fontWeight: activeClub?.id === club.id ? '700' : '400' }}>{club.name}</div>
                   <div style={{ fontSize: '10px', color: planColor[club.plan] ?? 'rgba(255,255,255,0.3)', fontWeight: '600' }}>Piano {club.plan}</div>
                 </div>
-                {activeClub?.id === club.id && <div style={{ color: '#c8f53a', fontSize: '12px' }}>✓</div>}
+                {activeClub?.id === club.id && <div style={{ color: pc, fontSize: '12px' }}>✓</div>}
               </div>
             ))}
             <div onClick={() => { setClubMenuOpen(false); navigate('/dashboard/centri') }}
-              style={{ padding: '10px 14px', cursor: 'pointer', fontSize: '13px', color: '#c8f53a', fontWeight: '600', textAlign: 'center' }}>
+              style={{ padding: '10px 14px', cursor: 'pointer', fontSize: '13px', color: pc, fontWeight: '600', textAlign: 'center' }}>
               + Aggiungi centro
             </div>
           </div>
@@ -156,7 +166,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
           const isActive = pathname === item.path
           return (
             <div key={item.path} onClick={() => navigate(item.path)}
-              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 16px', borderRadius: '10px', margin: '2px 8px', cursor: 'pointer', background: isActive ? 'rgba(200,245,58,0.12)' : 'transparent', color: isActive ? '#c8f53a' : 'rgba(255,255,255,0.5)', fontWeight: isActive ? '700' : '400', fontSize: '14px' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 16px', borderRadius: '10px', margin: '2px 8px', cursor: 'pointer', background: isActive ? `${pc}15` : 'transparent', color: isActive ? pc : 'rgba(255,255,255,0.5)', fontWeight: isActive ? '700' : '400', fontSize: '14px' }}>
               <span style={{ fontSize: '18px', width: '24px', textAlign: 'center' }}>{item.icon}</span>
               {item.label}
             </div>
@@ -165,8 +175,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
 
         {/* Bottone pannello admin solo per super admin */}
         {isSuperAdmin && (
-          <div
-            onClick={() => navigate('/superadmin')}
+          <div onClick={() => navigate('/superadmin')}
             style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 16px', borderRadius: '10px', margin: '8px 8px 2px', cursor: 'pointer', background: 'rgba(245,166,35,0.08)', color: '#f5a623', fontSize: '14px', fontWeight: '600' }}>
             <span style={{ fontSize: '18px', width: '24px', textAlign: 'center' }}>⚙️</span>
             Pannello Admin
@@ -177,7 +186,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       {/* User */}
       <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', borderRadius: '8px' }}>
-          <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'linear-gradient(135deg, #3a7fd4, #c8f53a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '700', color: '#1a1a14', flexShrink: 0 }}>
+          <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `linear-gradient(135deg, #3a7fd4, ${pc})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '700', color: '#1a1a14', flexShrink: 0 }}>
             {userEmail.charAt(0).toUpperCase()}
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -202,7 +211,13 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       {/* TOPBAR MOBILE */}
       {isMobile && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '56px', background: '#161b27', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', zIndex: 50 }}>
-          <div style={{ fontSize: '18px', fontWeight: '800', color: '#c8f53a' }}>padel●</div>
+          {activeClub?.logo_url ? (
+            <img src={activeClub.logo_url} alt="Logo" style={{ maxHeight: '28px', maxWidth: '100px', objectFit: 'contain' }} />
+          ) : (
+            <div style={{ fontSize: '18px', fontWeight: '800', color: pc }}>
+              {activeClub?.name ?? 'remate'}●
+            </div>
+          )}
           <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.4)', flex: 1, textAlign: 'center' }}>{activeClub?.name}</div>
           <button onClick={() => setMenuOpen(!menuOpen)} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#fff', width: '38px', height: '38px', borderRadius: '8px', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {menuOpen ? '✕' : '☰'}

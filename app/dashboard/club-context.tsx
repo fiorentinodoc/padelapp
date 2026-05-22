@@ -8,18 +8,22 @@ interface Club {
   name: string
   role: string
   plan: string
+  primary_color: string
+  logo_url: string | null
 }
 
 interface ClubContextType {
   activeClub: Club | null
   clubs: Club[]
   setActiveClub: (club: Club) => void
+  refreshClub: () => void
 }
 
 const ClubContext = createContext<ClubContextType>({
   activeClub: null,
   clubs: [],
-  setActiveClub: () => {}
+  setActiveClub: () => {},
+  refreshClub: () => {}
 })
 
 export function ClubProvider({ children }: { children: React.ReactNode }) {
@@ -27,40 +31,43 @@ export function ClubProvider({ children }: { children: React.ReactNode }) {
   const [activeClub, setActiveClubState] = useState<Club | null>(null)
   const supabase = createClient()
 
-  useEffect(() => {
-    async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+  useEffect(() => { load() }, [])
 
-      const { data: ic } = await supabase
-        .from('instructor_clubs')
-        .select('role, clubs(id, name, plan)')
-        .eq('profile_id', user.id)
+  async function load() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
 
-      if (ic && ic.length > 0) {
-        const clubList = ic.map((c: any) => ({
-          id:   c.clubs.id,
-          name: c.clubs.name,
-          role: c.role,
-          plan: c.clubs.plan
-        }))
-        setClubs(clubList)
+    const { data: ic } = await supabase
+      .from('instructor_clubs')
+      .select('role, clubs(id, name, plan, primary_color, logo_url)')
+      .eq('profile_id', user.id)
 
-        const savedId = localStorage.getItem('activeClubId')
-        const saved   = clubList.find((c: Club) => c.id === savedId)
-        setActiveClubState(saved ?? clubList[0])
-      }
+    if (ic && ic.length > 0) {
+      const clubList = ic.map((c: any) => ({
+        id:            c.clubs.id,
+        name:          c.clubs.name,
+        role:          c.role,
+        plan:          c.clubs.plan,
+        primary_color: c.clubs.primary_color ?? '#c8f53a',
+        logo_url:      c.clubs.logo_url ?? null
+      }))
+      setClubs(clubList)
+
+      const savedId = localStorage.getItem('activeClubId')
+      const saved   = clubList.find((c: Club) => c.id === savedId)
+      setActiveClubState(saved ?? clubList[0])
     }
-    load()
-  }, [])
+  }
 
   function setActiveClub(club: Club) {
     setActiveClubState(club)
     localStorage.setItem('activeClubId', club.id)
   }
 
+  function refreshClub() { load() }
+
   return (
-    <ClubContext.Provider value={{ activeClub, clubs, setActiveClub }}>
+    <ClubContext.Provider value={{ activeClub, clubs, setActiveClub, refreshClub }}>
       {children}
     </ClubContext.Provider>
   )
