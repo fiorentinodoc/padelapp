@@ -10,6 +10,7 @@ interface Club {
   plan: string
   primary_color: string
   logo_url: string | null
+  theme: string
 }
 
 interface ClubContextType {
@@ -39,7 +40,7 @@ export function ClubProvider({ children }: { children: React.ReactNode }) {
 
     const { data: ic } = await supabase
       .from('instructor_clubs')
-      .select('role, clubs(id, name, plan, primary_color, logo_url)')
+      .select('role, clubs(id, name, plan, primary_color, logo_url, theme)')
       .eq('profile_id', user.id)
 
     if (ic && ic.length > 0) {
@@ -49,7 +50,8 @@ export function ClubProvider({ children }: { children: React.ReactNode }) {
         role:          c.role,
         plan:          c.clubs.plan,
         primary_color: c.clubs.primary_color ?? '#c8f53a',
-        logo_url:      c.clubs.logo_url ?? null
+        logo_url:      c.clubs.logo_url ?? null,
+        theme:         c.clubs.theme ?? 'dark'
       }))
       setClubs(clubList)
 
