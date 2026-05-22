@@ -3,18 +3,24 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useClub, useTheme } from '../club-context'
+
+interface Stats {
+  totalStudents: number
+  activeStudents: number
+  totalLessons: number
+  totalBookings: number
+  cancelledBookings: number
+  byLevel: { level: string; count: number }[]
+  topLessons: { title: string; bookings: number }[]
+}
 
 export default function AnalyticsPage() {
-  const [stats, setStats] = useState({
-    totalStudents: 0,
-    activeStudents: 0,
-    totalLessons: 0,
-    totalBookings: 0,
-    cancelledBookings: 0,
-    byLevel: { beginner: 0, intermediate: 0, advanced: 0 }
-  })
+  const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
+  const { activeClub } = useClub()
+  const { bg, surface, surface2, border, text, textMuted, textSub, pc } = useTheme()
   const router = useRouter()
   const supabase = createClient()
 
@@ -25,20 +31,13 @@ export default function AnalyticsPage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    if (activeClub) loadStats()
+  }, [activeClub])
 
-  async function loadData() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { router.push('/login'); return }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('club_id')
-      .eq('id', user.id)
-      .single()
-
-    if (!profile?.club_id) { setLoading(false); return }
-    const clubId = profile.club_id
+  async function loadStats() {
+    if (!activeClub) return
+    setLoading(true)
 
     const [
       { count: totalStudents },
@@ -46,110 +45,161 @@ export default function AnalyticsPage() {
       { count: totalLessons },
       { count: totalBookings },
       { count: cancelledBookings },
-      { count: beginner },
-      { count: intermediate },
-      { count: advanced },
+      { data: students },
+      { data: lessons },
     ] = await Promise.all([
-      supabase.from('students').select('id', { count: 'exact', head: true }).eq('club_id', clubId),
-      supabase.from('students').select('id', { count: 'exact', head: true }).eq('club_id', clubId).eq('status', 'active'),
-      supabase.from('lessons').select('id', { count: 'exact', head: true }).eq('club_id', clubId).is('cancelled_at', null),
-      supabase.from('bookings').select('id', { count: 'exact', head: true }),
+      supabase.from('students').select('id', { count: 'exact', head: true }).eq('club_id', activeClub.id),
+      supabase.from('students').select('id', { count: 'exact', head: true }).eq('club_id', activeClub.id).eq('status', 'active'),
+      supabase.from('lessons').select('id', { count: 'exact', head: true }).eq('club_id', activeClub.id).is('cancelled_at', null),
+      supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('status', 'confirmed'),
       supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('status', 'cancelled'),
-      supabase.from('students').select('id', { count: 'exact', head: true }).eq('club_id', clubId).eq('level', 'beginner'),
-      supabase.from('students').select('id', { count: 'exact', head: true }).eq('club_id', clubId).eq('level', 'intermediate'),
-      supabase.from('students').select('id', { count: 'exact', head: true }).eq('club_id', clubId).eq('level', 'advanced'),
+      supabase.from('students').select('level').eq('club_id', activeClub.id).eq('status', 'active'),
+      supabase.from('lessons').select('title').eq('club_id', activeClub.id).is('cancelled_at', null),
     ])
 
+    // Conta per livello
+    const levelCount: Record<string, number> = {}
+    students?.forEach((s: any) => {
+      levelCount[s.level] = (levelCount[s.level] ?? 0) + 1
+    })
+    const byLevel = Object.entries(levelCount).map(([level, count]) => ({ level, count }))
+
+    // Top lezioni per nome
+    const lessonCount: Record<string, number> = {}
+    lessons?.forEach((l: any) => {
+      lessonCount[l.title] = (lessonCount[l.title] ?? 0) + 1
+    })
+    const topLessons = Object.entries(lessonCount)
+      .map(([title, bookings]) => ({ title, bookings }))
+      .sort((a, b) => b.bookings - a.bookings)
+      .slice(0, 5)
+
     setStats({
-      totalStudents:     totalStudents ?? 0,
-      activeStudents:    activeStudents ?? 0,
-      totalLessons:      totalLessons ?? 0,
-      totalBookings:     totalBookings ?? 0,
+      totalStudents:    totalStudents ?? 0,
+      activeStudents:   activeStudents ?? 0,
+      totalLessons:     totalLessons ?? 0,
+      totalBookings:    totalBookings ?? 0,
       cancelledBookings: cancelledBookings ?? 0,
-      byLevel: {
-        beginner:     beginner ?? 0,
-        intermediate: intermediate ?? 0,
-        advanced:     advanced ?? 0,
-      }
+      byLevel,
+      topLessons,
     })
     setLoading(false)
   }
 
-  const presenceRate = stats.totalBookings > 0
-    ? Math.round(((stats.totalBookings - stats.cancelledBookings) / stats.totalBookings) * 100)
-    : 0
-
-  const total = stats.byLevel.beginner + stats.byLevel.intermediate + stats.byLevel.advanced || 1
+  const levelLabel: Record<string, string> = {
+    beginner: 'Principiante', intermediate: 'Intermedio', advanced: 'Avanzato'
+  }
+  const levelColor: Record<string, string> = {
+    beginner: '#f5a623', intermediate: '#5b7fff', advanced: '#38c97a'
+  }
 
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#c8f53a', fontFamily: 'system-ui' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: pc, fontFamily: 'system-ui', background: bg }}>
       Caricamento...
     </div>
   )
 
-  return (
-    <div style={{ padding: isMobile ? '20px 16px' : '32px', fontFamily: 'system-ui', color: '#fff' }}>
+  if (!stats) return null
 
-      <div style={{ marginBottom: '24px' }}>
+  const totalByLevel = stats.byLevel.reduce((acc, b) => acc + b.count, 0)
+
+  return (
+    <div style={{ padding: isMobile ? '20px 16px' : '32px', fontFamily: 'system-ui', color: text, background: bg, minHeight: '100vh' }}>
+
+      <div style={{ marginBottom: '28px' }}>
         <div style={{ fontSize: '22px', fontWeight: '800' }}>Analytics</div>
-        <div style={{ fontSize: '13px', color: '#5a5a6a', marginTop: '4px' }}>Panoramica del tuo club</div>
+        <div style={{ fontSize: '13px', color: textMuted, marginTop: '4px' }}>
+          Statistiche per {activeClub?.name}
+        </div>
       </div>
 
-      {/* KPI — 2 colonne su mobile, 4 su desktop */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+      {/* KPI */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: '14px', marginBottom: '28px' }}>
         {[
-          { label: 'Alunni totali',  value: stats.totalStudents,  color: '#c8f53a', icon: '👥' },
-          { label: 'Alunni attivi',  value: stats.activeStudents, color: '#5b7fff', icon: '✅' },
-          { label: 'Lezioni attive', value: stats.totalLessons,   color: '#38c97a', icon: '📅' },
-          { label: 'Tasso presenze', value: `${presenceRate}%`,   color: '#f5a623', icon: '📊' },
+          { label: 'Alunni totali',    value: stats.totalStudents,    color: pc,        icon: '👥' },
+          { label: 'Alunni attivi',    value: stats.activeStudents,   color: '#38c97a', icon: '✅' },
+          { label: 'Lezioni attive',   value: stats.totalLessons,     color: '#5b7fff', icon: '📅' },
+          { label: 'Prenotazioni',     value: stats.totalBookings,    color: '#f5a623', icon: '🎾' },
         ].map((kpi, i) => (
-          <div key={i} style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderTop: `3px solid ${kpi.color}`, borderRadius: '14px', padding: '16px' }}>
-            <div style={{ fontSize: '20px', marginBottom: '8px' }}>{kpi.icon}</div>
-            <div style={{ fontSize: isMobile ? '22px' : '26px', fontWeight: '800', color: kpi.color, lineHeight: 1 }}>{kpi.value}</div>
-            <div style={{ fontSize: '11px', color: '#5a5a6a', marginTop: '4px' }}>{kpi.label}</div>
+          <div key={i} style={{ background: surface, border: `1px solid ${border}`, borderTop: `3px solid ${kpi.color}`, borderRadius: '14px', padding: '20px' }}>
+            <div style={{ fontSize: '22px', marginBottom: '8px' }}>{kpi.icon}</div>
+            <div style={{ fontSize: '28px', fontWeight: '800', color: kpi.color, lineHeight: 1 }}>{kpi.value}</div>
+            <div style={{ fontSize: '12px', color: textMuted, marginTop: '4px' }}>{kpi.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Grafici — colonna singola su mobile, due colonne su desktop */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px' }}>
 
-        {/* Distribuzione livelli */}
-        <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px' }}>
-          <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '20px' }}>Distribuzione per livello</div>
-          {[
-            { label: 'Principianti', value: stats.byLevel.beginner,    color: '#f5a623' },
-            { label: 'Intermedi',    value: stats.byLevel.intermediate, color: '#5b7fff' },
-            { label: 'Avanzati',     value: stats.byLevel.advanced,     color: '#38c97a' },
-          ].map(item => (
-            <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
-              <div style={{ fontSize: '13px', color: '#8b93a8', width: '90px', flexShrink: 0 }}>{item.label}</div>
-              <div style={{ flex: 1, height: '8px', background: '#1e2535', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.round((item.value / total) * 100)}%`, background: item.color, borderRadius: '4px' }} />
-              </div>
-              <div style={{ fontSize: '13px', fontWeight: '700', color: '#fff', width: '20px', textAlign: 'right' }}>{item.value}</div>
+        {/* Alunni per livello */}
+        <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: '16px', padding: '24px' }}>
+          <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '16px' }}>👥 Alunni per livello</div>
+          {stats.byLevel.length === 0 ? (
+            <div style={{ fontSize: '13px', color: textMuted, textAlign: 'center', padding: '20px' }}>Nessun dato</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {stats.byLevel.map(b => {
+                const pct = totalByLevel > 0 ? Math.round((b.count / totalByLevel) * 100) : 0
+                return (
+                  <div key={b.level}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: levelColor[b.level] ?? pc }}>
+                        {levelLabel[b.level] ?? b.level}
+                      </span>
+                      <span style={{ fontSize: '13px', color: textMuted }}>{b.count} ({pct}%)</span>
+                    </div>
+                    <div style={{ height: '8px', background: surface2, borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: levelColor[b.level] ?? pc, borderRadius: '4px', transition: 'width 0.5s' }} />
+                    </div>
+                  </div>
+                )
+              })}
             </div>
-          ))}
+          )}
         </div>
 
         {/* Prenotazioni */}
-        <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px' }}>
-          <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '16px' }}>Prenotazioni</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: '16px', padding: '24px' }}>
+          <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '16px' }}>📊 Prenotazioni</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {[
-              { label: 'Totali',      value: stats.totalBookings,                          color: '#fff' },
-              { label: 'Cancellate',  value: stats.cancelledBookings,                      color: '#e85858' },
-              { label: 'Confermate',  value: stats.totalBookings - stats.cancelledBookings, color: '#38c97a' },
-              { label: 'Tasso conf.', value: `${presenceRate}%`,                           color: '#c8f53a' },
-            ].map(item => (
-              <div key={item.label} style={{ background: '#1e2535', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ fontSize: '20px', fontWeight: '800', color: item.color }}>{item.value}</div>
-                <div style={{ fontSize: '11px', color: '#5a5a6a', marginTop: '3px' }}>{item.label}</div>
-              </div>
-            ))}
+              { label: 'Confermate', value: stats.totalBookings,     color: '#38c97a' },
+              { label: 'Cancellate', value: stats.cancelledBookings, color: '#e85858' },
+            ].map(item => {
+              const total = stats.totalBookings + stats.cancelledBookings
+              const pct   = total > 0 ? Math.round((item.value / total) * 100) : 0
+              return (
+                <div key={item.label}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: item.color }}>{item.label}</span>
+                    <span style={{ fontSize: '13px', color: textMuted }}>{item.value} ({pct}%)</span>
+                  </div>
+                  <div style={{ height: '8px', background: surface2, borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: item.color, borderRadius: '4px', transition: 'width 0.5s' }} />
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        </div>
 
+          {/* Top lezioni */}
+          {stats.topLessons.length > 0 && (
+            <>
+              <div style={{ fontSize: '14px', fontWeight: '700', margin: '20px 0 12px' }}>🏆 Lezioni più frequenti</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {stats.topLessons.map((l, i) => (
+                  <div key={l.title} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: surface2, borderRadius: '8px', padding: '10px 12px' }}>
+                    <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: `${pc}18`, color: pc, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', flexShrink: 0 }}>
+                      {i + 1}
+                    </div>
+                    <div style={{ flex: 1, fontSize: '13px', fontWeight: '600', color: text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</div>
+                    <div style={{ fontSize: '12px', color: textMuted, flexShrink: 0 }}>{l.bookings}x</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
