@@ -7,9 +7,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 type Mode = 'login' | 'register' | 'forgot'
 
 function LoginForm() {
-  const searchParams = useSearchParams()
-  const joinCode     = searchParams.get('code')
-  const initialMode  = (searchParams.get('mode') as Mode) ?? 'login'
+  const searchParams       = useSearchParams()
+  const joinCode           = searchParams.get('code')
+  const initialMode        = (searchParams.get('mode') as Mode) ?? 'login'
+  const isInstructorInvite = searchParams.get('role') === 'instructor'
 
   const [mode, setMode] = useState<Mode>(initialMode)
   const [isInstructor, setIsInstructor] = useState(false)
@@ -110,11 +111,7 @@ function LoginForm() {
           .eq('profile_id', user.id)
           .limit(1)
 
-        if (ic && ic.length > 0) {
-          router.push('/superadmin?choose=true')
-        } else {
-          router.push('/superadmin')
-        }
+        router.push(ic && ic.length > 0 ? '/superadmin?choose=true' : '/superadmin')
       } else if (profile?.role === 'club_admin') {
         router.push('/dashboard')
       } else {
@@ -128,7 +125,8 @@ function LoginForm() {
     if (!firstName || !lastName || !email || !password) {
       setError('Compila tutti i campi obbligatori'); return
     }
-    if (isInstructor && !clubName) {
+    const actingAsInstructor = isInstructor || isInstructorInvite
+    if (actingAsInstructor && !clubName) {
       setError('Inserisci il nome del club'); return
     }
     if (password !== confirmPassword) { setError('Le password non coincidono'); return }
@@ -136,25 +134,20 @@ function LoginForm() {
     setLoading(true)
     setError('')
 
-    const role = isInstructor ? 'club_admin' : 'student'
+    const role = actingAsInstructor ? 'club_admin' : 'student'
 
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: {
-          first_name: firstName,
-          last_name:  lastName,
-          role,
-          club_name:  isInstructor ? clubName : ''
-        }
+        data: { first_name: firstName, last_name: lastName, role, club_name: actingAsInstructor ? clubName : '' }
       }
     })
 
     if (signUpError) { setError(signUpError.message); setLoading(false); return }
 
     if (data.user) {
-      if (isInstructor) {
+      if (actingAsInstructor) {
         const { data: invite } = await supabase
           .from('club_invites')
           .select('*')
@@ -178,27 +171,18 @@ function LoginForm() {
 
         if (newClub) {
           await supabase.from('profiles').update({
-            first_name: firstName,
-            last_name:  lastName,
-            role:       'club_admin',
-            club_id:    newClub.id
+            first_name: firstName, last_name: lastName, role: 'club_admin', club_id: newClub.id
           }).eq('id', data.user.id)
 
           await supabase.from('instructor_clubs').insert({
-            profile_id: data.user.id,
-            club_id:    newClub.id,
-            role:       'owner'
+            profile_id: data.user.id, club_id: newClub.id, role: 'owner'
           })
 
-          await supabase.from('club_invites')
-            .update({ used: true })
-            .eq('id', invite.id)
+          await supabase.from('club_invites').update({ used: true }).eq('id', invite.id)
         }
       } else {
         await supabase.from('profiles').update({
-          first_name: firstName,
-          last_name:  lastName,
-          role:       'student'
+          first_name: firstName, last_name: lastName, role: 'student'
         }).eq('id', data.user.id)
 
         await handleJoinCode(data.user.id)
@@ -237,19 +221,19 @@ function LoginForm() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh', background: '#0e1117',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: 'system-ui', padding: '20px'
-    }}>
-      <div style={{
-        background: '#161b27', border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: '20px', padding: '36px',
-        width: '100%', maxWidth: '420px'
-      }}>
+    <div style={{ minHeight: '100vh', background: '#0e1117', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', padding: '20px' }}>
+      <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '36px', width: '100%', maxWidth: '420px' }}>
 
-        <div style={{ fontSize: '26px', fontWeight: '800', color: '#c8f53a', marginBottom: '6px' }}>padel●</div>
+        <div style={{ fontSize: '26px', fontWeight: '800', color: '#c8f53a', marginBottom: '6px' }}>remate●</div>
 
+        {/* Banner invito istruttore */}
+        {isInstructorInvite && mode === 'register' && (
+          <div style={{ background: 'rgba(200,245,58,0.08)', border: '1px solid rgba(200,245,58,0.2)', borderRadius: '10px', padding: '10px 14px', fontSize: '12px', color: '#c8f53a', marginBottom: '16px' }}>
+            🎾 Il tuo accesso è stato approvato — crea il tuo account istruttore!
+          </div>
+        )}
+
+        {/* Banner invito giocatore */}
         {joinCode && mode === 'register' && (
           <div style={{ background: 'rgba(200,245,58,0.08)', border: '1px solid rgba(200,245,58,0.2)', borderRadius: '10px', padding: '10px 14px', fontSize: '12px', color: '#c8f53a', marginBottom: '16px' }}>
             🎾 Stai accettando un invito — verrai collegato automaticamente al club!
@@ -258,12 +242,12 @@ function LoginForm() {
 
         <div style={{ fontSize: '18px', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>
           {mode === 'login'    && 'Accedi al tuo account'}
-          {mode === 'register' && 'Crea il tuo account'}
+          {mode === 'register' && (isInstructorInvite ? 'Crea account istruttore' : 'Crea il tuo account')}
           {mode === 'forgot'   && 'Recupera la password'}
         </div>
         <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '28px' }}>
           {mode === 'login'    && 'Istruttore o giocatore'}
-          {mode === 'register' && 'Scegli il tipo di account'}
+          {mode === 'register' && (isInstructorInvite ? 'Inserisci i tuoi dati per iniziare' : 'Scegli il tipo di account')}
           {mode === 'forgot'   && 'Ti mandiamo un link via email'}
         </div>
 
@@ -305,20 +289,22 @@ function LoginForm() {
         {/* ── REGISTRAZIONE ── */}
         {mode === 'register' && (
           <>
-            {!joinCode && (
+            {/* Toggle solo se NON è invito istruttore e NON è invito giocatore */}
+            {!joinCode && !isInstructorInvite && (
               <div style={{ display: 'flex', background: '#1e2535', borderRadius: '10px', padding: '4px', marginBottom: '20px' }}>
                 <div onClick={() => setIsInstructor(false)}
-                  style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: !isInstructor ? '#c8f53a' : 'transparent', color: !isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700', transition: 'all 0.15s' }}>
+                  style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: !isInstructor ? '#c8f53a' : 'transparent', color: !isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700' }}>
                   👤 Sono un giocatore
                 </div>
                 <div onClick={() => setIsInstructor(true)}
-                  style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: isInstructor ? '#c8f53a' : 'transparent', color: isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700', transition: 'all 0.15s' }}>
+                  style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: isInstructor ? '#c8f53a' : 'transparent', color: isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700' }}>
                   🎾 Sono un istruttore
                 </div>
               </div>
             )}
 
-            {isInstructor && !joinCode && (
+            {/* Nome club — solo per istruttori */}
+            {(isInstructor || isInstructorInvite) && !joinCode && (
               <div style={{ marginBottom: '14px' }}>
                 <label style={labelStyle}>Nome club / academy *</label>
                 <input type="text" value={clubName} onChange={e => setClubName(e.target.value)}
@@ -355,7 +341,8 @@ function LoginForm() {
                 placeholder="Ripeti la password" style={inputStyle} />
             </div>
 
-            {!isInstructor && !joinCode && (
+            {/* Info per giocatori senza invito */}
+            {!isInstructor && !isInstructorInvite && !joinCode && (
               <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '10px', padding: '12px 14px', fontSize: '12px', color: '#8b93a8', marginBottom: '16px', lineHeight: '1.6' }}>
                 💡 Dopo la registrazione il tuo istruttore ti aggiungerà al club tramite link invito.
               </div>
@@ -365,7 +352,7 @@ function LoginForm() {
             {success && <SuccessBox msg={success} />}
 
             <button onClick={handleRegister} disabled={loading} style={primaryBtn(loading)}>
-              {loading ? 'Creazione...' : joinCode ? 'Crea account e unisciti →' : isInstructor ? 'Crea account istruttore' : 'Crea account giocatore'}
+              {loading ? 'Creazione...' : isInstructorInvite ? 'Crea account istruttore →' : joinCode ? 'Crea account e unisciti →' : isInstructor ? 'Crea account istruttore' : 'Crea account giocatore'}
             </button>
             <div style={{ textAlign: 'center', marginTop: '20px' }}>
               <span onClick={() => switchMode('login')}
