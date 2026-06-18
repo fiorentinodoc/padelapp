@@ -15,19 +15,28 @@ export default function ResetPasswordPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    // Supabase manda il token come hash nell'URL
-    // Dobbiamo aspettare che venga processato
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'PASSWORD_RECOVERY') {
-          setReady(true)
-        }
-        if (event === 'SIGNED_IN' && session) {
-          setReady(true)
-        }
-      }
-    )
+  // Processa il token hash dall'URL manualmente
+  const hashParams = new URLSearchParams(window.location.hash.substring(1))
+  const accessToken  = hashParams.get('access_token')
+  const refreshToken = hashParams.get('refresh_token')
+  const type         = hashParams.get('type')
 
+  if (accessToken && type === 'recovery') {
+    supabase.auth.setSession({
+      access_token:  accessToken,
+      refresh_token: refreshToken ?? ''
+    }).then(({ error }) => {
+      if (!error) setReady(true)
+      else setError('Link non valido o scaduto. Richiedi un nuovo link.')
+    })
+  } else {
+    // Controlla sessione esistente
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setReady(true)
+      else setError('Link non valido o scaduto. Richiedi un nuovo link.')
+    })
+  }
+}, [])
     // Controlla se c'è già una sessione attiva
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setReady(true)
