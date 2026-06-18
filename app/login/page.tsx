@@ -136,24 +136,40 @@ function LoginForm() {
 
     const role = actingAsInstructor ? 'club_admin' : 'student'
 
-    // Per gli istruttori verifica l'invito PRIMA di creare l'account
-    if (actingAsInstructor) {
-      console.log('Cerco invito per:', email.toLowerCase().trim())
+// Per gli istruttori verifica l'invito PRIMA di creare l'account
+if (actingAsInstructor) {
+  const { data: invite } = await supabase
+    .from('club_invites')
+    .select('id')
+    .eq('email', email.toLowerCase().trim())
+    .eq('used', false)
+    .single()
 
-      const { data: invite, error: inviteError } = await supabase
-        .from('club_invites')
-        .select('*')
-        .eq('email', email.toLowerCase().trim())
-        .eq('used', false)
-        .single()
+  if (!invite) {
+    setError('La tua email non è autorizzata come istruttore. Richiedi l\'accesso prima.')
+    setLoading(false)
+    return
+  }
 
-      console.log('Invito trovato:', invite, 'Errore:', inviteError)
+  // Il trigger handle_new_user() crea automaticamente club e profilo
+  const { data, error: signUpError } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { first_name: firstName, last_name: lastName, role: 'club_admin', club_name: clubName }
+    }
+  })
 
-      if (!invite) {
-        setError('La tua email non è autorizzata come istruttore. Richiedi l\'accesso prima.')
-        setLoading(false)
-        return
-      }
+  if (signUpError) { setError(signUpError.message); setLoading(false); return }
+
+  if (data.user) {
+    setSuccess('Account creato! Accedi con le tue credenziali.')
+    setMode('login')
+  }
+
+  setLoading(false)
+  return
+}
 
       // Crea account
       const { data, error: signUpError } = await supabase.auth.signUp({
