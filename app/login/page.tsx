@@ -7,17 +7,14 @@ import { useRouter, useSearchParams } from 'next/navigation'
 type Mode = 'login' | 'register' | 'forgot'
 
 function LoginForm() {
-  const searchParams       = useSearchParams()
-  const joinCode           = searchParams.get('code')
-  const initialMode        = (searchParams.get('mode') as Mode) ?? 'login'
-  const isInstructorInvite = searchParams.get('role') === 'instructor'
+  const searchParams = useSearchParams()
+  const joinCode     = searchParams.get('code')
+  const initialMode  = (searchParams.get('mode') as Mode) ?? 'login'
 
   const [mode, setMode] = useState<Mode>(initialMode)
-  const [isInstructor, setIsInstructor] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [clubName, setClubName] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -28,7 +25,7 @@ function LoginForm() {
 
   function reset() {
     setError(''); setSuccess(''); setEmail(''); setPassword('')
-    setConfirmPassword(''); setFirstName(''); setLastName(''); setClubName('')
+    setConfirmPassword(''); setFirstName(''); setLastName('')
   }
 
   function switchMode(m: Mode) { reset(); setMode(m) }
@@ -110,11 +107,25 @@ function LoginForm() {
           .select('club_id')
           .eq('profile_id', user.id)
           .limit(1)
-
         router.push(ic && ic.length > 0 ? '/superadmin?choose=true' : '/superadmin')
       } else if (profile?.role === 'club_admin') {
         router.push('/dashboard')
       } else {
+        // Studente — controlla se è collegato a un club
+        const { data: student } = await supabase
+          .from('students')
+          .select('id, club_id')
+          .eq('profile_id', user.id)
+          .single()
+
+        if (!student || !student.club_id) {
+          // Non è collegato a nessun club
+          await supabase.auth.signOut()
+          setError('Il tuo account non è ancora collegato a nessun club. Chiedi al tuo istruttore di mandarti il link invito.')
+          setLoading(false)
+          return
+        }
+
         router.push('/player')
       }
     }
@@ -125,156 +136,27 @@ function LoginForm() {
     if (!firstName || !lastName || !email || !password) {
       setError('Compila tutti i campi obbligatori'); return
     }
-    const actingAsInstructor = isInstructor || isInstructorInvite
-   if (actingAsInstructor) {
-  // Registra direttamente — il trigger handle_new_user gestisce tutto
-  const { data, error: signUpError } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { first_name: firstName, last_name: lastName, role: 'club_admin', club_name: clubName }
-    }
-  })
+    if (password !== confirmPassword) { setError('Le password non coincidono'); return }
+    if (password.length < 6) { setError('La password deve avere almeno 6 caratteri'); return }
 
-  if (signUpError) { setError(signUpError.message); setLoading(false); return }
+    // Senza link invito, la registrazione pubblica crea solo un giocatore
+    // Il trigger handle_new_user controlla automaticamente se c'è un invito istruttore
+    setLoading(true)
+    setError('')
 
-  if (data.user) {
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', data.user.id)
-      .single()
-
-    if (profile?.role !== 'club_admin') {
-      setError('La tua email non è autorizzata come istruttore. Richiedi l\'accesso prima.')
-      await supabase.auth.signOut()
-      setLoading(false)
-      return
-    }
-
-    setSuccess('Account creato! Accedi con le tue credenziali.')
-    setMode('login')
-  }
-
-  setLoading(false)
-  return
-}
-// Per gli istruttori verifica l'invito PRIMA di creare l'account
-if (actingAsInstructor) {
-  const { data: invite } = await supabase
-    .from('club_invites')
-    .select('id')
-    .eq('email', email.toLowerCase().trim())
-    .eq('used', false)
-    .single()
-
-  if (!invite) {
-    setError('La tua email non è autorizzata come istruttore. Richiedi l\'accesso prima.')
-    setLoading(false)
-    return
-  }
-
-  // Il trigger handle_new_user() crea automaticamente club e profilo
-  const { data, error: signUpError } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { first_name: firstName, last_name: lastName, role: 'club_admin', club_name: clubName }
-    }
-  })
-
-  if (signUpError) { setError(signUpError.message); setLoading(false); return }
-
-  if (data.user) {
-    setSuccess('Account creato! Accedi con le tue credenziali.')
-    setMode('login')
-  }
-
-  setLoading(false)
-  return
-}
-
-      // Crea account
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { first_name: firstName, last_name: lastName, role, club_name: clubName }
-        }
-      })
-
-      if (signUpError) { setError(signUpError.message); setLoading(false); return }
-
-      if (data.user) {
-        const slug = clubName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
-
-        const { data: newClub, error: clubError } = await supabase
-          .from('clubs')
-          .insert({ name: clubName, slug, plan: 'free', max_students: 20 })
-          .select()
-          .single()
-
-        console.log('Club creato:', newClub, 'Errore:', clubError)
-
-        if (clubError || !newClub) {
-          setError('Errore nella creazione del club: ' + clubError?.message)
-          setLoading(false)
-          return
-        }
-
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .update({
-            first_name: firstName,
-            last_name:  lastName,
-            role:       'club_admin',
-            club_id:    newClub.id
-          })
-          .eq('id', data.user.id)
-
-        console.log('Profilo aggiornato, errore:', profileError)
-
-        const { error: icError } = await supabase
-          .from('instructor_clubs')
-          .insert({ profile_id: data.user.id, club_id: newClub.id, role: 'owner' })
-
-        console.log('Instructor club creato, errore:', icError)
-
-        await supabase.from('club_invites')
-          .update({ used: true })
-          .eq('id', invite.id)
-
-        setSuccess('Account creato! Accedi con le tue credenziali.')
-        setMode('login')
-      }
-
-      setLoading(false)
-      return
-    }
-
-    // Registrazione giocatore
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { first_name: firstName, last_name: lastName, role, club_name: '' }
+        data: { first_name: firstName, last_name: lastName }
       }
     })
 
     if (signUpError) { setError(signUpError.message); setLoading(false); return }
 
     if (data.user) {
-      await supabase.from('profiles').update({
-        first_name: firstName,
-        last_name:  lastName,
-        role:       'student'
-      }).eq('id', data.user.id)
-
       await handleJoinCode(data.user.id)
-
-      setSuccess('Account creato! Controlla la tua email per confermare, poi accedi.')
+      setSuccess('Account creato! Accedi con le tue credenziali.')
       setMode('login')
     }
     setLoading(false)
@@ -312,12 +194,6 @@ if (actingAsInstructor) {
 
         <div style={{ fontSize: '26px', fontWeight: '800', color: '#c8f53a', marginBottom: '6px' }}>remate●</div>
 
-        {isInstructorInvite && mode === 'register' && (
-          <div style={{ background: 'rgba(200,245,58,0.08)', border: '1px solid rgba(200,245,58,0.2)', borderRadius: '10px', padding: '10px 14px', fontSize: '12px', color: '#c8f53a', marginBottom: '16px' }}>
-            🎾 Il tuo accesso è stato approvato — crea il tuo account istruttore!
-          </div>
-        )}
-
         {joinCode && mode === 'register' && (
           <div style={{ background: 'rgba(200,245,58,0.08)', border: '1px solid rgba(200,245,58,0.2)', borderRadius: '10px', padding: '10px 14px', fontSize: '12px', color: '#c8f53a', marginBottom: '16px' }}>
             🎾 Stai accettando un invito — verrai collegato automaticamente al club!
@@ -326,12 +202,12 @@ if (actingAsInstructor) {
 
         <div style={{ fontSize: '18px', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>
           {mode === 'login'    && 'Accedi al tuo account'}
-          {mode === 'register' && (isInstructorInvite ? 'Crea account istruttore' : 'Crea il tuo account')}
+          {mode === 'register' && 'Crea il tuo account'}
           {mode === 'forgot'   && 'Recupera la password'}
         </div>
         <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '28px' }}>
-          {mode === 'login'    && 'Istruttore o giocatore'}
-          {mode === 'register' && (isInstructorInvite ? 'Inserisci i tuoi dati per iniziare' : 'Scegli il tipo di account')}
+          {mode === 'login'    && 'Accedi per continuare'}
+          {mode === 'register' && 'Inserisci i tuoi dati'}
           {mode === 'forgot'   && 'Ti mandiamo un link via email'}
         </div>
 
@@ -373,27 +249,6 @@ if (actingAsInstructor) {
         {/* ── REGISTRAZIONE ── */}
         {mode === 'register' && (
           <>
-            {!joinCode && !isInstructorInvite && (
-              <div style={{ display: 'flex', background: '#1e2535', borderRadius: '10px', padding: '4px', marginBottom: '20px' }}>
-                <div onClick={() => setIsInstructor(false)}
-                  style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: !isInstructor ? '#c8f53a' : 'transparent', color: !isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700' }}>
-                  👤 Sono un giocatore
-                </div>
-                <div onClick={() => setIsInstructor(true)}
-                  style={{ flex: 1, padding: '10px', borderRadius: '7px', textAlign: 'center', cursor: 'pointer', background: isInstructor ? '#c8f53a' : 'transparent', color: isInstructor ? '#0e1117' : '#8b93a8', fontSize: '13px', fontWeight: '700' }}>
-                  🎾 Sono un istruttore
-                </div>
-              </div>
-            )}
-
-            {(isInstructor || isInstructorInvite) && !joinCode && (
-              <div style={{ marginBottom: '14px' }}>
-                <label style={labelStyle}>Nome club / academy *</label>
-                <input type="text" value={clubName} onChange={e => setClubName(e.target.value)}
-                  placeholder="Es: ASD Padel Roma" style={inputStyle} />
-              </div>
-            )}
-
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
               <div>
                 <label style={labelStyle}>Nome *</label>
@@ -423,9 +278,13 @@ if (actingAsInstructor) {
                 placeholder="Ripeti la password" style={inputStyle} />
             </div>
 
-            {!isInstructor && !isInstructorInvite && !joinCode && (
+            {!joinCode && (
               <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '10px', padding: '12px 14px', fontSize: '12px', color: '#8b93a8', marginBottom: '16px', lineHeight: '1.6' }}>
-                💡 Dopo la registrazione il tuo istruttore ti aggiungerà al club tramite link invito.
+                💡 Sei un istruttore?{' '}
+                <span onClick={() => router.push('/richiedi-accesso')}
+                  style={{ color: '#c8f53a', cursor: 'pointer', fontWeight: '600' }}>
+                  Richiedi l'accesso →
+                </span>
               </div>
             )}
 
@@ -433,7 +292,7 @@ if (actingAsInstructor) {
             {success && <SuccessBox msg={success} />}
 
             <button onClick={handleRegister} disabled={loading} style={primaryBtn(loading)}>
-              {loading ? 'Creazione...' : isInstructorInvite ? 'Crea account istruttore →' : joinCode ? 'Crea account e unisciti →' : isInstructor ? 'Crea account istruttore' : 'Crea account giocatore'}
+              {loading ? 'Creazione...' : joinCode ? 'Crea account e unisciti →' : 'Crea account'}
             </button>
             <div style={{ textAlign: 'center', marginTop: '20px' }}>
               <span onClick={() => switchMode('login')}
