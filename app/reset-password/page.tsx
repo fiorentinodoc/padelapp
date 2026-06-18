@@ -15,34 +15,25 @@ export default function ResetPasswordPage() {
   const supabase = createClient()
 
   useEffect(() => {
-  // Processa il token hash dall'URL manualmente
-  const hashParams = new URLSearchParams(window.location.hash.substring(1))
-  const accessToken  = hashParams.get('access_token')
-  const refreshToken = hashParams.get('refresh_token')
-  const type         = hashParams.get('type')
+    const hashParams = new URLSearchParams(window.location.hash.substring(1))
+    const accessToken  = hashParams.get('access_token')
+    const refreshToken = hashParams.get('refresh_token')
+    const type         = hashParams.get('type')
 
-  if (accessToken && type === 'recovery') {
-    supabase.auth.setSession({
-      access_token:  accessToken,
-      refresh_token: refreshToken ?? ''
-    }).then(({ error }) => {
-      if (!error) setReady(true)
-      else setError('Link non valido o scaduto. Richiedi un nuovo link.')
-    })
-  } else {
-    // Controlla sessione esistente
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setReady(true)
-      else setError('Link non valido o scaduto. Richiedi un nuovo link.')
-    })
-  }
-}, [])
-    // Controlla se c'è già una sessione attiva
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setReady(true)
-    })
-
-    return () => subscription.unsubscribe()
+    if (accessToken && type === 'recovery') {
+      supabase.auth.setSession({
+        access_token:  accessToken,
+        refresh_token: refreshToken ?? ''
+      }).then(({ error: e }) => {
+        if (!e) setReady(true)
+        else setError('Link non valido o scaduto. Richiedi un nuovo link.')
+      })
+    } else {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) setReady(true)
+        else setError('Link non valido o scaduto. Richiedi un nuovo link.')
+      })
+    }
   }, [])
 
   async function handleReset() {
@@ -87,18 +78,25 @@ export default function ResetPasswordPage() {
         <div style={{ fontSize: '18px', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>Nuova password</div>
         <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '28px' }}>Scegli una nuova password per il tuo account</div>
 
-        {!ready ? (
+        {!ready && !error && (
           <div style={{ textAlign: 'center', padding: '20px', color: '#8b93a8', fontSize: '14px' }}>
             ⏳ Verifica del link in corso...
           </div>
-        ) : (
+        )}
+
+        {error && (
+          <div style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.3)', borderRadius: '10px', padding: '12px 14px', color: '#e85858', fontSize: '13px', marginBottom: '16px' }}>
+            {error}
+          </div>
+        )}
+
+        {ready && (
           <>
             <div style={{ marginBottom: '14px' }}>
               <label style={labelStyle}>Nuova password</label>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)}
                 placeholder="Minimo 6 caratteri" style={inputStyle} />
             </div>
-
             <div style={{ marginBottom: '24px' }}>
               <label style={labelStyle}>Conferma password</label>
               <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
@@ -106,11 +104,6 @@ export default function ResetPasswordPage() {
                 onKeyDown={e => e.key === 'Enter' && handleReset()} />
             </div>
 
-            {error && (
-              <div style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.3)', borderRadius: '10px', padding: '12px 14px', color: '#e85858', fontSize: '13px', marginBottom: '16px' }}>
-                {error}
-              </div>
-            )}
             {success && (
               <div style={{ background: 'rgba(56,201,122,0.1)', border: '1px solid rgba(56,201,122,0.3)', borderRadius: '10px', padding: '12px 14px', color: '#38c97a', fontSize: '13px', marginBottom: '16px' }}>
                 {success}
