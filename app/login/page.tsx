@@ -126,16 +126,41 @@ function LoginForm() {
       setError('Compila tutti i campi obbligatori'); return
     }
     const actingAsInstructor = isInstructor || isInstructorInvite
-    if (actingAsInstructor && !clubName) {
-      setError('Inserisci il nome del club'); return
+   if (actingAsInstructor) {
+  // Registra direttamente — il trigger handle_new_user gestisce tutto
+  const { data, error: signUpError } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { first_name: firstName, last_name: lastName, role: 'club_admin', club_name: clubName }
     }
-    if (password !== confirmPassword) { setError('Le password non coincidono'); return }
-    if (password.length < 6) { setError('La password deve avere almeno 6 caratteri'); return }
-    setLoading(true)
-    setError('')
+  })
 
-    const role = actingAsInstructor ? 'club_admin' : 'student'
+  if (signUpError) { setError(signUpError.message); setLoading(false); return }
 
+  if (data.user) {
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', data.user.id)
+      .single()
+
+    if (profile?.role !== 'club_admin') {
+      setError('La tua email non è autorizzata come istruttore. Richiedi l\'accesso prima.')
+      await supabase.auth.signOut()
+      setLoading(false)
+      return
+    }
+
+    setSuccess('Account creato! Accedi con le tue credenziali.')
+    setMode('login')
+  }
+
+  setLoading(false)
+  return
+}
 // Per gli istruttori verifica l'invito PRIMA di creare l'account
 if (actingAsInstructor) {
   const { data: invite } = await supabase
