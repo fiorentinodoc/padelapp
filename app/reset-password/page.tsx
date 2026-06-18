@@ -10,18 +10,29 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [ready, setReady] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
-    // Supabase gestisce automaticamente il token dall'URL
+    // Supabase manda il token come hash nell'URL
+    // Dobbiamo aspettare che venga processato
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event) => {
+      async (event, session) => {
         if (event === 'PASSWORD_RECOVERY') {
-          // Token valido, l'utente può inserire la nuova password
+          setReady(true)
+        }
+        if (event === 'SIGNED_IN' && session) {
+          setReady(true)
         }
       }
     )
+
+    // Controlla se c'è già una sessione attiva
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setReady(true)
+    })
+
     return () => subscription.unsubscribe()
   }, [])
 
@@ -42,6 +53,7 @@ export default function ResetPasswordPage() {
     }
 
     setSuccess('Password aggiornata! Verrai reindirizzato al login.')
+    await supabase.auth.signOut()
     setTimeout(() => router.push('/login'), 2000)
     setLoading(false)
   }
@@ -52,60 +64,62 @@ export default function ResetPasswordPage() {
     borderRadius: '10px', color: '#fff', fontSize: '14px',
     outline: 'none', boxSizing: 'border-box', fontFamily: 'system-ui'
   }
+  const labelStyle: React.CSSProperties = {
+    fontSize: '11px', fontWeight: '700', color: '#8b93a8',
+    textTransform: 'uppercase', letterSpacing: '0.5px',
+    display: 'block', marginBottom: '6px'
+  }
 
   return (
-    <div style={{
-      minHeight: '100vh', background: '#0e1117',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: 'system-ui', padding: '20px'
-    }}>
-      <div style={{
-        background: '#161b27', border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: '20px', padding: '36px',
-        width: '100%', maxWidth: '420px'
-      }}>
-        <div style={{ fontSize: '26px', fontWeight: '800', color: '#c8f53a', marginBottom: '6px' }}>padel●</div>
+    <div style={{ minHeight: '100vh', background: '#0e1117', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', padding: '20px' }}>
+      <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '36px', width: '100%', maxWidth: '420px' }}>
+
+        <div style={{ fontSize: '26px', fontWeight: '800', color: '#c8f53a', marginBottom: '6px' }}>remate●</div>
         <div style={{ fontSize: '18px', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>Nuova password</div>
         <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '28px' }}>Scegli una nuova password per il tuo account</div>
 
-        <div style={{ marginBottom: '14px' }}>
-          <label style={{ fontSize: '11px', fontWeight: '700', color: '#8b93a8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>
-            Nuova password
-          </label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-            placeholder="Minimo 6 caratteri" style={inputStyle} />
-        </div>
-
-        <div style={{ marginBottom: '24px' }}>
-          <label style={{ fontSize: '11px', fontWeight: '700', color: '#8b93a8', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '6px' }}>
-            Conferma password
-          </label>
-          <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
-            placeholder="Ripeti la password" style={inputStyle}
-            onKeyDown={e => e.key === 'Enter' && handleReset()} />
-        </div>
-
-        {error && (
-          <div style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.3)', borderRadius: '10px', padding: '12px 14px', color: '#e85858', fontSize: '13px', marginBottom: '16px' }}>
-            {error}
+        {!ready ? (
+          <div style={{ textAlign: 'center', padding: '20px', color: '#8b93a8', fontSize: '14px' }}>
+            ⏳ Verifica del link in corso...
           </div>
-        )}
-        {success && (
-          <div style={{ background: 'rgba(56,201,122,0.1)', border: '1px solid rgba(56,201,122,0.3)', borderRadius: '10px', padding: '12px 14px', color: '#38c97a', fontSize: '13px', marginBottom: '16px' }}>
-            {success}
-          </div>
-        )}
+        ) : (
+          <>
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Nuova password</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                placeholder="Minimo 6 caratteri" style={inputStyle} />
+            </div>
 
-        <button onClick={handleReset} disabled={loading} style={{
-          width: '100%', padding: '14px',
-          background: loading ? '#5a7a20' : '#c8f53a',
-          color: '#0e1117', border: 'none', borderRadius: '10px',
-          fontSize: '15px', fontWeight: '700',
-          cursor: loading ? 'not-allowed' : 'pointer',
-          fontFamily: 'system-ui'
-        }}>
-          {loading ? 'Aggiornamento...' : 'Aggiorna password'}
-        </button>
+            <div style={{ marginBottom: '24px' }}>
+              <label style={labelStyle}>Conferma password</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                placeholder="Ripeti la password" style={inputStyle}
+                onKeyDown={e => e.key === 'Enter' && handleReset()} />
+            </div>
+
+            {error && (
+              <div style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.3)', borderRadius: '10px', padding: '12px 14px', color: '#e85858', fontSize: '13px', marginBottom: '16px' }}>
+                {error}
+              </div>
+            )}
+            {success && (
+              <div style={{ background: 'rgba(56,201,122,0.1)', border: '1px solid rgba(56,201,122,0.3)', borderRadius: '10px', padding: '12px 14px', color: '#38c97a', fontSize: '13px', marginBottom: '16px' }}>
+                {success}
+              </div>
+            )}
+
+            <button onClick={handleReset} disabled={loading} style={{
+              width: '100%', padding: '14px',
+              background: loading ? '#5a7a20' : '#c8f53a',
+              color: '#0e1117', border: 'none', borderRadius: '10px',
+              fontSize: '15px', fontWeight: '700',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontFamily: 'system-ui'
+            }}>
+              {loading ? 'Aggiornamento...' : 'Aggiorna password'}
+            </button>
+          </>
+        )}
 
         <div style={{ textAlign: 'center', marginTop: '20px' }}>
           <span onClick={() => router.push('/login')} style={{ fontSize: '13px', color: '#5b7fff', cursor: 'pointer', fontWeight: '600' }}>
