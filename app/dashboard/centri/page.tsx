@@ -95,12 +95,12 @@ export default function CentriPage() {
         return
       }
 
-      const slug = form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
-      const { data: newClub, error: clubError } = await supabase
-        .from('clubs')
-        .insert({ name: form.name, slug, plan: 'free', max_students: 20 })
-        .select()
-        .single()
+    const slug = form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
+const { data: newClub, error: clubError } = await supabase
+  .from('clubs')
+  .insert({ name: form.name, slug, plan: plan, max_students: 20 })
+  .select()
+  .single()
 
       if (clubError) { setError('Errore: ' + clubError.message); setSaving(false); return }
 
