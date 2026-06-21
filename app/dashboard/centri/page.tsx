@@ -19,7 +19,7 @@ export default function CentriPage() {
   const [error, setError] = useState('')
   const [editingClub, setEditingClub] = useState<Club | null>(null)
   const [isMobile, setIsMobile] = useState(false)
-  const [form, setForm] = useState({ name: '', address: '' })
+  const [form, setForm] = useState({ name: '' })
   const { activeClub, setActiveClub } = useClub()
   const { bg, surface, surface2, border, text, textSub, textMuted, pc } = useTheme()
   const router = useRouter()
@@ -39,9 +39,9 @@ export default function CentriPage() {
     if (!user) { router.push('/login'); return }
 
     const { data: ic } = await supabase
-  .from('instructor_clubs')
-  .select('clubs(id, name, plan)')
-  .eq('profile_id', user.id)
+      .from('instructor_clubs')
+      .select('clubs(id, name, plan)')
+      .eq('profile_id', user.id)
 
     const clubList = ic?.map((c: any) => c.clubs).filter(Boolean) ?? []
     setClubs(clubList)
@@ -50,14 +50,14 @@ export default function CentriPage() {
 
   function openNew() {
     setEditingClub(null)
-    setForm({ name: '', address: '' })
+    setForm({ name: '' })
     setError('')
     setShowModal(true)
   }
 
   function openEdit(club: Club) {
     setEditingClub(club)
-    setForm({ name: club.name, address: club.address ?? '' })
+    setForm({ name: club.name })
     setError('')
     setShowModal(true)
   }
@@ -73,12 +73,11 @@ export default function CentriPage() {
     if (editingClub) {
       const { error: updateError } = await supabase
         .from('clubs')
-        .update({ name: form.name, address: form.address || null })
+        .update({ name: form.name })
         .eq('id', editingClub.id)
 
       if (updateError) { setError('Errore: ' + updateError.message); setSaving(false); return }
     } else {
-      // Controlla limite centri
       const planLimits: Record<string, number> = { free: 1, starter: 3, pro: 999 }
       const { data: firstClub } = await supabase
         .from('clubs').select('plan').eq('id', clubs[0]?.id).single()
@@ -99,7 +98,7 @@ export default function CentriPage() {
       const slug = form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
       const { data: newClub, error: clubError } = await supabase
         .from('clubs')
-        .insert({ name: form.name, address: form.address || null, slug, plan: 'free', max_students: 20 })
+        .insert({ name: form.name, slug, plan: 'free', max_students: 20 })
         .select()
         .single()
 
@@ -180,12 +179,7 @@ export default function CentriPage() {
                       </span>
                     )}
                   </div>
-                  {club.address && (
-                    <div style={{ fontSize: '13px', color: textMuted }}>📍 {club.address}</div>
-                  )}
-                  <div style={{ fontSize: '11px', color: textMuted, marginTop: '4px' }}>
-                    Piano: {club.plan}
-                  </div>
+                  <div style={{ fontSize: '11px', color: textMuted }}>Piano: {club.plan}</div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                   <button onClick={() => openEdit(club)}
@@ -214,18 +208,13 @@ export default function CentriPage() {
               {editingClub ? 'Modifica centro' : 'Aggiungi centro'}
             </div>
             <div style={{ fontSize: '13px', color: textMuted, marginBottom: '20px' }}>
-              {editingClub ? editingClub.name : 'Inserisci i dati del nuovo centro'}
+              {editingClub ? editingClub.name : 'Inserisci il nome del nuovo centro'}
             </div>
 
-            <div style={{ marginBottom: '14px' }}>
-              <label style={labelStyle}>Nome centro *</label>
-              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-                placeholder="Es: Padel Club Roma" style={inputStyle} />
-            </div>
             <div style={{ marginBottom: '20px' }}>
-              <label style={labelStyle}>Indirizzo</label>
-              <input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })}
-                placeholder="Es: Via Roma 1, Milano" style={inputStyle} />
+              <label style={labelStyle}>Nome centro *</label>
+              <input value={form.name} onChange={e => setForm({ name: e.target.value })}
+                placeholder="Es: Padel Club Roma" style={inputStyle} />
             </div>
 
             {error && (
