@@ -104,11 +104,9 @@ export function useClub() {
 export function useTheme() {
   const { activeClub } = useContext(ClubContext)
 
-  const storedTheme = typeof window !== 'undefined' ? localStorage.getItem('clubTheme') : null
-  const storedColor = typeof window !== 'undefined' ? localStorage.getItem('clubColor') : null
-
-  const isDark = (activeClub?.theme ?? storedTheme ?? 'dark') === 'dark'
-  const pc     = activeClub?.primary_color ?? storedColor ?? '#c8f53a'
+  // Usa solo activeClub — evita localStorage durante SSR
+  const isDark = (activeClub?.theme ?? 'dark') === 'dark'
+  const pc     = activeClub?.primary_color ?? '#c8f53a'
 
   return {
     isDark,
