@@ -30,20 +30,7 @@ const ClubContext = createContext<ClubContextType>({
 
 export function ClubProvider({ children }: { children: React.ReactNode }) {
   const [clubs, setClubs] = useState<Club[]>([])
-
-  const [activeClub, setActiveClubState] = useState<Club | null>(() => {
-    if (typeof window === 'undefined') return null
-    const theme   = localStorage.getItem('clubTheme') ?? 'dark'
-    const color   = localStorage.getItem('clubColor') ?? '#c8f53a'
-    const id      = localStorage.getItem('activeClubId') ?? ''
-    if (!id) return null
-    return {
-      id, name: '', role: '', plan: 'free',
-      primary_color: color, logo_url: null,
-      theme, plan_expires_at: null
-    } as Club
-  })
-
+  const [activeClub, setActiveClubState] = useState<Club | null>(null)
   const supabase = createClient()
 
   useEffect(() => { load() }, [])
@@ -104,7 +91,6 @@ export function useClub() {
 export function useTheme() {
   const { activeClub } = useContext(ClubContext)
 
-  // Usa solo activeClub — evita localStorage durante SSR
   const isDark = (activeClub?.theme ?? 'dark') === 'dark'
   const pc     = activeClub?.primary_color ?? '#c8f53a'
 
