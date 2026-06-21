@@ -28,6 +28,7 @@ function SuperAdminContent() {
   const [clubs, setClubs] = useState<Club[]>([])
   const [loading, setLoading] = useState(true)
   const [choosing, setChoosing] = useState(false)
+  const [chooseHandled, setChooseHandled] = useState(false)
   const [tab, setTab] = useState<'instructors' | 'clubs'>('instructors')
   const [showAddInstructor, setShowAddInstructor] = useState(false)
   const [newInstructor, setNewInstructor] = useState({ email: '', club_name: '' })
@@ -55,19 +56,15 @@ function SuperAdminContent() {
       return
     }
 
-    // Mostra schermata scelta solo al primo caricamento
-if (searchParams.get('choose') === 'true' && !choosing) {
-  const { data: ic } = await supabase
-    .from('instructor_clubs')
-    .select('club_id')
-    .eq('profile_id', user.id)
-    .limit(1)
-  if (ic && ic.length > 0) {
-    setChoosing(true)
-    setLoading(false)
-    return
-  }
-}
+    if (searchParams.get('choose') === 'true' && !chooseHandled) {
+      setChooseHandled(true)
+      const { data: ic } = await supabase
+        .from('instructor_clubs')
+        .select('club_id')
+        .eq('profile_id', user.id)
+        .limit(1)
+      if (ic && ic.length > 0) setChoosing(true)
+    }
 
     const { data: invitesData } = await supabase
       .from('club_invites')
@@ -136,11 +133,9 @@ if (searchParams.get('choose') === 'true' && !choosing) {
   async function handleChangePlan(clubId: string, plan: string, currentExpiry: string | null) {
     const updates: any = { plan }
 
-    // Se passa a free rimuovi la scadenza
     if (plan === 'free') {
       updates.plan_expires_at = null
     } else if (!currentExpiry) {
-      // Se passa a piano a pagamento senza scadenza, imposta 30 giorni
       const expiry = new Date()
       expiry.setDate(expiry.getDate() + 30)
       updates.plan_expires_at = expiry.toISOString()
@@ -184,18 +179,18 @@ if (searchParams.get('choose') === 'true' && !choosing) {
 
   function formatExpiry(dateStr: string | null): string {
     if (!dateStr) return '—'
-    const d = new Date(dateStr)
+    const d    = new Date(dateStr)
     const diff = Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     const label = d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
-    if (diff < 0) return `⚠️ Scaduto il ${label}`
-    if (diff <= 7) return `⚠️ Scade tra ${diff} giorni (${label})`
+    if (diff < 0)  return `⚠️ Scaduto il ${label}`
+    if (diff <= 7) return `⚠️ Scade tra ${diff} giorni`
     return `✓ Scade il ${label}`
   }
 
   function expiryColor(dateStr: string | null): string {
     if (!dateStr) return '#5a5a6a'
     const diff = Math.ceil((new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-    if (diff < 0) return '#e85858'
+    if (diff < 0)  return '#e85858'
     if (diff <= 7) return '#f5a623'
     return '#38c97a'
   }
@@ -353,7 +348,6 @@ if (searchParams.get('choose') === 'true' && !choosing) {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                       <div style={{ flex: 1 }}>
-                        {/* Email + status */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px', flexWrap: 'wrap' }}>
                           <div style={{ fontSize: '15px', fontWeight: '700' }}>{instructor.email}</div>
                           <span style={{
@@ -365,15 +359,12 @@ if (searchParams.get('choose') === 'true' && !choosing) {
                           </span>
                         </div>
 
-                        {/* Nome club */}
                         <div style={{ fontSize: '13px', color: '#5a5a6a', marginBottom: '10px' }}>
                           🏟️ {instructor.club_name}
                         </div>
 
-                        {/* Piano + scadenza — solo se registrato */}
                         {instructor.used && instructor.club_id && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                            {/* Dropdown piano */}
                             <select
                               value={instructor.club_plan ?? 'free'}
                               onChange={e => handleChangePlan(instructor.club_id!, e.target.value, instructor.plan_expires_at)}
@@ -383,29 +374,23 @@ if (searchParams.get('choose') === 'true' && !choosing) {
                               <option value="pro">💎 Pro €69/mese</option>
                             </select>
 
-                            {/* Scadenza */}
                             {instructor.club_plan !== 'free' && (
                               <>
                                 {editingExpiry === instructor.club_id ? (
                                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                    <input
-                                      type="date"
-                                      value={expiryDate}
+                                    <input type="date" value={expiryDate}
                                       onChange={e => setExpiryDate(e.target.value)}
-                                      style={{ background: '#1e2535', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', padding: '5px 8px', borderRadius: '6px', fontSize: '12px', outline: 'none' }}
-                                    />
+                                      style={{ background: '#1e2535', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', padding: '5px 8px', borderRadius: '6px', fontSize: '12px', outline: 'none' }} />
                                     <button onClick={() => handleSetExpiry(instructor.club_id!)}
-                                      style={{ background: '#38c97a', border: 'none', color: '#fff', padding: '5px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: '700' }}>
-                                      ✓
-                                    </button>
+                                      style={{ background: '#38c97a', border: 'none', color: '#fff', padding: '5px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: '700' }}>✓</button>
                                     <button onClick={() => { setEditingExpiry(null); setExpiryDate('') }}
-                                      style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#8b93a8', padding: '5px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>
-                                      ✕
-                                    </button>
+                                      style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: '#8b93a8', padding: '5px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>✕</button>
                                   </div>
                                 ) : (
-                                  <div
-                                    onClick={() => { setEditingExpiry(instructor.club_id!); setExpiryDate(instructor.plan_expires_at ? new Date(instructor.plan_expires_at).toISOString().split('T')[0] : '') }}
+                                  <div onClick={() => {
+                                    setEditingExpiry(instructor.club_id!)
+                                    setExpiryDate(instructor.plan_expires_at ? new Date(instructor.plan_expires_at).toISOString().split('T')[0] : '')
+                                  }}
                                     style={{ fontSize: '12px', color: expiryColor(instructor.plan_expires_at), cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                     {formatExpiry(instructor.plan_expires_at)}
                                     <span style={{ color: '#5b7fff', fontSize: '11px' }}>✏️</span>
@@ -417,15 +402,13 @@ if (searchParams.get('choose') === 'true' && !choosing) {
                         )}
                       </div>
 
-                      {/* Azioni */}
                       <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                         {!instructor.used && (
-                          <button
-                            onClick={() => {
-                              const link = 'https://padelapp-zeta.vercel.app/login'
-                              const msg  = `Ciao! Il tuo accesso a Remate è stato attivato 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${instructor.email}) per registrarti.`
-                              window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-                            }}
+                          <button onClick={() => {
+                            const link = 'https://padelapp-zeta.vercel.app/login'
+                            const msg  = `Ciao! Il tuo accesso a Remate è stato attivato 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${instructor.email}) per registrarti.`
+                            window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+                          }}
                             style={{ background: '#25D366', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
                             📱 Manda link
                           </button>
@@ -463,9 +446,7 @@ if (searchParams.get('choose') === 'true' && !choosing) {
                       <td style={{ padding: '14px 16px', fontWeight: '600' }}>{club.name}</td>
                       <td style={{ padding: '14px 16px' }}>
                         <select value={club.plan}
-                          onChange={async e => {
-                            await handleChangePlan(club.id, e.target.value, club.plan_expires_at)
-                          }}
+                          onChange={async e => handleChangePlan(club.id, e.target.value, club.plan_expires_at)}
                           style={{ background: '#1e2535', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', outline: 'none' }}>
                           <option value="free">Free</option>
                           <option value="starter">Starter</option>
@@ -474,11 +455,12 @@ if (searchParams.get('choose') === 'true' && !choosing) {
                       </td>
                       <td style={{ padding: '14px 16px', fontSize: '12px', color: expiryColor(club.plan_expires_at) }}>
                         {club.plan === 'free' ? '—' : (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            {formatExpiry(club.plan_expires_at)}
-                            <span
-                              onClick={() => { setEditingExpiry(club.id); setExpiryDate(club.plan_expires_at ? new Date(club.plan_expires_at).toISOString().split('T')[0] : '') }}
-                              style={{ color: '#5b7fff', cursor: 'pointer', fontSize: '11px' }}>✏️</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span>{formatExpiry(club.plan_expires_at)}</span>
+                            <span onClick={() => {
+                              setEditingExpiry(club.id)
+                              setExpiryDate(club.plan_expires_at ? new Date(club.plan_expires_at).toISOString().split('T')[0] : '')
+                            }} style={{ color: '#5b7fff', cursor: 'pointer', fontSize: '11px' }}>✏️</span>
                             {editingExpiry === club.id && (
                               <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                                 <input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)}
