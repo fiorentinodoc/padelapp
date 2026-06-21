@@ -1,3 +1,9 @@
+const [mounted, setMounted] = useState(false)
+
+useEffect(() => {
+  setMounted(true)
+}, [])
+
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -241,17 +247,16 @@ export default function LezioniPage() {
         </div>
 
         {/* Legenda centri */}
-        {clubs.length > 1 && (
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {clubs.map((club, i) => (
-              <div key={club.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: surface2, padding: '4px 10px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${border}` }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: LEVEL_COLORS[i % LEVEL_COLORS.length], flexShrink: 0 }} />
-                <span style={{ color: text, fontWeight: '600' }}>{club.name}</span>
-              </div>
-            ))}
-          </div>
-        )}
+{mounted && clubs.length > 1 && (
+  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+    {clubs.map((club, i) => (
+      <div key={club.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: surface2, padding: '4px 10px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${border}` }}>
+        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: LEVEL_COLORS[i % LEVEL_COLORS.length], flexShrink: 0 }} />
+        <span style={{ color: text, fontWeight: '600' }}>{club.name}</span>
       </div>
+    ))}
+  </div>
+)}
 
       {/* VISTA SETTIMANA DESKTOP */}
       {viewMode === 'week' && !isMobile && (
