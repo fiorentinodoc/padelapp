@@ -55,14 +55,19 @@ function SuperAdminContent() {
       return
     }
 
-    if (searchParams.get('choose') === 'true') {
-      const { data: ic } = await supabase
-        .from('instructor_clubs')
-        .select('club_id')
-        .eq('profile_id', user.id)
-        .limit(1)
-      if (ic && ic.length > 0) setChoosing(true)
-    }
+    // Mostra schermata scelta solo al primo caricamento
+if (searchParams.get('choose') === 'true' && !choosing) {
+  const { data: ic } = await supabase
+    .from('instructor_clubs')
+    .select('club_id')
+    .eq('profile_id', user.id)
+    .limit(1)
+  if (ic && ic.length > 0) {
+    setChoosing(true)
+    setLoading(false)
+    return
+  }
+}
 
     const { data: invitesData } = await supabase
       .from('club_invites')
