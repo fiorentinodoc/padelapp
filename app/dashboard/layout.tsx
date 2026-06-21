@@ -3,7 +3,7 @@
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
-import { ClubProvider, useClub } from './club-context'
+import { ClubProvider, useClub, useTheme } from './club-context'
 
 interface Club {
   id: string
@@ -13,6 +13,7 @@ interface Club {
   primary_color: string
   logo_url: string | null
   theme: string
+  plan_expires_at: string | null
 }
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
@@ -22,20 +23,10 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const [clubMenuOpen, setClubMenuOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const { clubs, activeClub, setActiveClub } = useClub()
+  const { isDark, pc, bg, surface, surface2, border, text, textSub, textMuted } = useTheme()
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
-
-  // ── Tema dinamico ──────────────────────────────────────────
-  const isDark      = (activeClub?.theme ?? 'dark') === 'dark'
-  const pc          = activeClub?.primary_color ?? '#c8f53a'
-  const bg          = isDark ? '#0e1117' : '#f0ede8'
-  const surface     = isDark ? '#161b27' : '#ffffff'
-  const surface2    = isDark ? '#1e2535' : '#ebe8e0'
-  const border      = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)'
-  const textPrimary = isDark ? '#ffffff' : '#0e1117'
-  const textSub     = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)'
-  const textMuted   = isDark ? '#5a5a6a' : '#9a9a8a'
 
   useEffect(() => {
     function checkMobile() { setIsMobile(window.innerWidth < 768) }
@@ -76,6 +67,16 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     router.push(path)
     setMenuOpen(false)
   }
+
+  // Calcola giorni alla scadenza
+  function daysToExpiry(): number | null {
+    if (!activeClub?.plan_expires_at || activeClub.plan === 'free') return null
+    return Math.ceil((new Date(activeClub.plan_expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  }
+
+  const expiryDays = daysToExpiry()
+  const isExpired  = expiryDays !== null && expiryDays < 0
+  const isExpiring = expiryDays !== null && expiryDays >= 0 && expiryDays <= 7
 
   const navItems = [
     { label: 'Dashboard',    icon: '▦',  path: '/dashboard' },
@@ -120,16 +121,14 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
             {activeClub?.name.charAt(0).toUpperCase() ?? '?'}
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
-            <div style={{ fontSize: '13px', fontWeight: '600', color: textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: '13px', fontWeight: '600', color: text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {activeClub?.name ?? 'Nessun centro'}
             </div>
             <div style={{ fontSize: '10px', color: planColor[activeClub?.plan ?? 'free'], fontWeight: '600' }}>
               Piano {activeClub?.plan ?? 'free'}
             </div>
           </div>
-          {clubs.length > 1 && (
-            <div style={{ fontSize: '12px', color: textMuted }}>⌄</div>
-          )}
+          {clubs.length > 1 && <div style={{ fontSize: '12px', color: textMuted }}>⌄</div>}
         </div>
 
         {/* Dropdown centri */}
@@ -142,7 +141,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                   {club.name.charAt(0).toUpperCase()}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '13px', color: textPrimary, fontWeight: activeClub?.id === club.id ? '700' : '400' }}>{club.name}</div>
+                  <div style={{ fontSize: '13px', color: text, fontWeight: activeClub?.id === club.id ? '700' : '400' }}>{club.name}</div>
                   <div style={{ fontSize: '10px', color: planColor[club.plan] ?? textMuted, fontWeight: '600' }}>Piano {club.plan}</div>
                 </div>
                 {activeClub?.id === club.id && <div style={{ color: pc, fontSize: '12px' }}>✓</div>}
@@ -156,8 +155,31 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
         )}
       </div>
 
-      {/* Banner upgrade per free */}
-      {activeClub?.plan === 'free' && !isSuperAdmin && (
+      {/* Banner scadenza piano */}
+      {isExpired && (
+        <div style={{ margin: '10px 12px', background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.3)', borderRadius: '8px', padding: '10px 12px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#e85858', marginBottom: '4px' }}>⚠️ Piano scaduto</div>
+          <div style={{ fontSize: '11px', color: textSub, marginBottom: '6px' }}>Il tuo piano {activeClub?.plan} è scaduto</div>
+          <div style={{ fontSize: '11px', color: '#e85858', fontWeight: '600', cursor: 'pointer' }}
+            onClick={() => navigate('/dashboard/abbonamento')}>
+            Rinnova ora →
+          </div>
+        </div>
+      )}
+
+      {isExpiring && !isExpired && (
+        <div style={{ margin: '10px 12px', background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)', borderRadius: '8px', padding: '10px 12px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#f5a623', marginBottom: '4px' }}>⏳ Piano in scadenza</div>
+          <div style={{ fontSize: '11px', color: textSub, marginBottom: '6px' }}>Scade tra {expiryDays} giorni</div>
+          <div style={{ fontSize: '11px', color: '#f5a623', fontWeight: '600', cursor: 'pointer' }}
+            onClick={() => navigate('/dashboard/abbonamento')}>
+            Rinnova →
+          </div>
+        </div>
+      )}
+
+      {/* Banner upgrade free */}
+      {activeClub?.plan === 'free' && !isSuperAdmin && !isExpired && (
         <div style={{ margin: '10px 12px', background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.2)', borderRadius: '8px', padding: '10px 12px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: '#5b7fff', marginBottom: '4px' }}>Piano Free</div>
           <div style={{ fontSize: '11px', color: textSub, marginBottom: '6px' }}>1 centro · max 20 alunni</div>
@@ -198,7 +220,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
             {userEmail.charAt(0).toUpperCase()}
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
-            <div style={{ fontSize: '12px', color: textPrimary, fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userEmail}</div>
+            <div style={{ fontSize: '12px', color: text, fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userEmail}</div>
             <div onClick={handleLogout} style={{ fontSize: '11px', color: textMuted, cursor: 'pointer', marginTop: '2px' }}>Esci →</div>
           </div>
         </div>
@@ -207,16 +229,14 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: bg, fontFamily: 'system-ui', color: textPrimary }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: bg, fontFamily: 'system-ui', color: text }}>
 
-      {/* SIDEBAR DESKTOP */}
       {!isMobile && (
         <div style={{ width: '220px', minWidth: '220px', background: surface, borderRight: `1px solid ${border}`, position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 50, overflowY: 'auto' }}>
           <SidebarInner />
         </div>
       )}
 
-      {/* TOPBAR MOBILE */}
       {isMobile && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '56px', background: surface, borderBottom: `1px solid ${border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', zIndex: 50 }}>
           {activeClub?.logo_url ? (
@@ -227,13 +247,12 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
             </div>
           )}
           <div style={{ fontSize: '13px', color: textSub, flex: 1, textAlign: 'center' }}>{activeClub?.name}</div>
-          <button onClick={() => setMenuOpen(!menuOpen)} style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', border: 'none', color: textPrimary, width: '38px', height: '38px', borderRadius: '8px', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button onClick={() => setMenuOpen(!menuOpen)} style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', border: 'none', color: text, width: '38px', height: '38px', borderRadius: '8px', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {menuOpen ? '✕' : '☰'}
           </button>
         </div>
       )}
 
-      {/* DRAWER MOBILE */}
       {isMobile && menuOpen && (
         <>
           <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 60 }} />
@@ -243,7 +262,6 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
         </>
       )}
 
-      {/* CONTENUTO */}
       <div style={{ marginLeft: isMobile ? 0 : '220px', marginTop: isMobile ? '56px' : 0, flex: 1, minHeight: isMobile ? 'calc(100vh - 56px)' : '100vh', width: isMobile ? '100%' : 'calc(100% - 220px)' }}>
         {children}
       </div>

@@ -11,6 +11,7 @@ interface Club {
   primary_color: string
   logo_url: string | null
   theme: string
+  plan_expires_at: string | null
 }
 
 interface ClubContextType {
@@ -30,21 +31,16 @@ const ClubContext = createContext<ClubContextType>({
 export function ClubProvider({ children }: { children: React.ReactNode }) {
   const [clubs, setClubs] = useState<Club[]>([])
 
-  // Inizializza subito dal localStorage per evitare flash tema
   const [activeClub, setActiveClubState] = useState<Club | null>(() => {
     if (typeof window === 'undefined') return null
-    const theme = localStorage.getItem('clubTheme') ?? 'dark'
-    const color = localStorage.getItem('clubColor') ?? '#c8f53a'
-    const id    = localStorage.getItem('activeClubId') ?? ''
+    const theme   = localStorage.getItem('clubTheme') ?? 'dark'
+    const color   = localStorage.getItem('clubColor') ?? '#c8f53a'
+    const id      = localStorage.getItem('activeClubId') ?? ''
     if (!id) return null
     return {
-      id,
-      name:          '',
-      role:          '',
-      plan:          'free',
-      primary_color: color,
-      logo_url:      null,
-      theme
+      id, name: '', role: '', plan: 'free',
+      primary_color: color, logo_url: null,
+      theme, plan_expires_at: null
     } as Club
   })
 
@@ -58,18 +54,19 @@ export function ClubProvider({ children }: { children: React.ReactNode }) {
 
     const { data: ic } = await supabase
       .from('instructor_clubs')
-      .select('role, clubs(id, name, plan, primary_color, logo_url, theme)')
+      .select('role, clubs(id, name, plan, primary_color, logo_url, theme, plan_expires_at)')
       .eq('profile_id', user.id)
 
     if (ic && ic.length > 0) {
       const clubList = ic.map((c: any) => ({
-        id:            c.clubs.id,
-        name:          c.clubs.name,
-        role:          c.role,
-        plan:          c.clubs.plan,
-        primary_color: c.clubs.primary_color ?? '#c8f53a',
-        logo_url:      c.clubs.logo_url ?? null,
-        theme:         c.clubs.theme ?? 'dark'
+        id:              c.clubs.id,
+        name:            c.clubs.name,
+        role:            c.role,
+        plan:            c.clubs.plan,
+        primary_color:   c.clubs.primary_color ?? '#c8f53a',
+        logo_url:        c.clubs.logo_url ?? null,
+        theme:           c.clubs.theme ?? 'dark',
+        plan_expires_at: c.clubs.plan_expires_at ?? null
       }))
       setClubs(clubList)
 
@@ -78,7 +75,6 @@ export function ClubProvider({ children }: { children: React.ReactNode }) {
       const active  = saved ?? clubList[0]
       setActiveClubState(active)
 
-      // Aggiorna localStorage con dati freschi
       localStorage.setItem('activeClubId', active.id)
       localStorage.setItem('clubTheme', active.theme)
       localStorage.setItem('clubColor', active.primary_color)
