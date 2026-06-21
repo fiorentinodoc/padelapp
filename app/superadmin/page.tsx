@@ -4,6 +4,16 @@ import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 
+interface Instructor {
+  invite_id: string
+  email: string
+  club_name: string
+  used: boolean
+  club_id: string | null
+  club_plan: string | null
+  created_at: string
+}
+
 interface Club {
   id: string
   name: string
@@ -12,6 +22,7 @@ interface Club {
 }
 
 function SuperAdminContent() {
+  const [instructors, setInstructors] = useState<Instructor[]>([])
   const [clubs, setClubs] = useState<Club[]>([])
   const [loading, setLoading] = useState(true)
   const [choosing, setChoosing] = useState(false)
@@ -19,7 +30,6 @@ function SuperAdminContent() {
   const [showAddInstructor, setShowAddInstructor] = useState(false)
   const [newInstructor, setNewInstructor] = useState({ email: '', club_name: '' })
   const [addingInstructor, setAddingInstructor] = useState(false)
-  const [invites, setInvites] = useState<any[]>([])
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -47,10 +57,16 @@ function SuperAdminContent() {
         .select('club_id')
         .eq('profile_id', user.id)
         .limit(1)
-
       if (ic && ic.length > 0) setChoosing(true)
     }
 
+    // Carica inviti con dati club collegati
+    const { data: invitesData } = await supabase
+      .from('club_invites')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    // Carica tutti i club
     const { data: clubsData } = await supabase
       .from('clubs')
       .select('id, name, plan, created_at')
@@ -58,12 +74,24 @@ function SuperAdminContent() {
 
     setClubs(clubsData ?? [])
 
-    const { data: invitesData } = await supabase
-      .from('club_invites')
-      .select('*')
-      .order('created_at', { ascending: false })
+    // Per ogni invito usato, trova il club tramite nome
+    const instructorList: Instructor[] = (invitesData ?? []).map((invite: any) => {
+      const matchingClub = invite.used
+        ? (clubsData ?? []).find((c: any) => c.name === invite.club_name)
+        : null
 
-    setInvites(invitesData ?? [])
+      return {
+        invite_id:  invite.id,
+        email:      invite.email,
+        club_name:  invite.club_name,
+        used:       invite.used,
+        club_id:    matchingClub?.id ?? null,
+        club_plan:  matchingClub?.plan ?? null,
+        created_at: invite.created_at
+      }
+    })
+
+    setInstructors(instructorList)
     setLoading(false)
   }
 
@@ -84,29 +112,37 @@ function SuperAdminContent() {
 
     if (error) {
       alert('Errore: ' + error.message)
-    } else {
-      const link = 'https://padelapp-zeta.vercel.app/login'
-      const msg  = `Ciao! Il tuo accesso a Remate è stato attivato 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${newInstructor.email}) per registrarti.`
-      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-      setNewInstructor({ email: '', club_name: '' })
-      setShowAddInstructor(false)
-      await loadData()
+      setAddingInstructor(false)
+      return
     }
+
+    const link = 'https://padelapp-zeta.vercel.app/login'
+    const msg  = `Ciao! Il tuo accesso a Remate è stato attivato 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${newInstructor.email}) per registrarti.`
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+
+    setNewInstructor({ email: '', club_name: '' })
+    setShowAddInstructor(false)
+    await loadData()
     setAddingInstructor(false)
   }
 
-  async function handleRevokeInvite(invite: any) {
-    if (!confirm(`Revocare l'accesso a ${invite.email}?`)) return
-    await supabase.from('club_invites').delete().eq('id', invite.id)
+  async function handleChangePlan(clubId: string, plan: string) {
+    await supabase.from('clubs').update({ plan }).eq('id', clubId)
     await loadData()
   }
 
-  async function handleDeleteClub(club: Club) {
-    if (!confirm(`Eliminare il club "${club.name}"?\n\nATTENZIONE: verranno eliminati tutti i dati associati.`)) return
-    await supabase.from('instructor_clubs').delete().eq('club_id', club.id)
-    await supabase.from('lessons').delete().eq('club_id', club.id)
-    await supabase.from('students').delete().eq('club_id', club.id)
-    await supabase.from('clubs').delete().eq('id', club.id)
+  async function handleRevokeInstructor(instructor: Instructor) {
+    if (!confirm(`Revocare l'accesso a ${instructor.email}?\n\nSe l'istruttore è già registrato, il suo account rimarrà ma non potrà più accedere al club.`)) return
+
+    await supabase.from('club_invites').delete().eq('id', instructor.invite_id)
+
+    if (instructor.club_id) {
+      await supabase.from('instructor_clubs').delete().eq('club_id', instructor.club_id)
+      await supabase.from('lessons').delete().eq('club_id', instructor.club_id)
+      await supabase.from('students').delete().eq('club_id', instructor.club_id)
+      await supabase.from('clubs').delete().eq('id', instructor.club_id)
+    }
+
     await loadData()
   }
 
@@ -156,6 +192,9 @@ function SuperAdminContent() {
     display: 'block', marginBottom: '6px'
   }
 
+  const registered = instructors.filter(i => i.used)
+  const pending    = instructors.filter(i => !i.used)
+
   return (
     <div style={{ minHeight: '100vh', background: '#0e1117', fontFamily: 'system-ui', color: '#fff' }}>
 
@@ -182,9 +221,9 @@ function SuperAdminContent() {
         {/* KPI */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '28px', maxWidth: '600px' }}>
           {[
-            { label: 'Club attivi',       value: clubs.length,                              color: '#c8f53a', icon: '🏟️' },
-            { label: 'Istruttori attivi', value: invites.filter(i => i.used).length,        color: '#38c97a', icon: '🎾' },
-            { label: 'In attesa',         value: invites.filter(i => !i.used).length,       color: '#f5a623', icon: '⏳' },
+            { label: 'Club attivi',        value: clubs.length,      color: '#c8f53a', icon: '🏟️' },
+            { label: 'Istruttori attivi',  value: registered.length, color: '#38c97a', icon: '🎾' },
+            { label: 'In attesa reg.',     value: pending.length,    color: '#f5a623', icon: '⏳' },
           ].map((kpi, i) => (
             <div key={i} style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderTop: `3px solid ${kpi.color}`, borderRadius: '14px', padding: '20px' }}>
               <div style={{ fontSize: '22px', marginBottom: '8px' }}>{kpi.icon}</div>
@@ -197,7 +236,7 @@ function SuperAdminContent() {
         {/* Tabs */}
         <div style={{ display: 'flex', gap: '4px', background: '#1e2535', padding: '4px', borderRadius: '10px', width: 'fit-content', marginBottom: '20px' }}>
           {[
-            { value: 'instructors', label: 'Istruttori' },
+            { value: 'instructors', label: `Istruttori (${instructors.length})` },
             { value: 'clubs',       label: `Club (${clubs.length})` },
           ].map(t => (
             <div key={t.value} onClick={() => setTab(t.value as any)}
@@ -218,7 +257,7 @@ function SuperAdminContent() {
               </button>
             </div>
 
-            {/* Form aggiungi istruttore */}
+            {/* Form aggiungi */}
             {showAddInstructor && (
               <div style={{ background: '#161b27', border: '1px solid rgba(200,245,58,0.2)', borderRadius: '16px', padding: '24px', marginBottom: '20px' }}>
                 <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '16px', color: '#c8f53a' }}>
@@ -227,25 +266,19 @@ function SuperAdminContent() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
                   <div>
                     <label style={labelStyle}>Email istruttore *</label>
-                    <input
-                      type="email"
-                      value={newInstructor.email}
+                    <input type="email" value={newInstructor.email}
                       onChange={e => setNewInstructor({ ...newInstructor, email: e.target.value })}
-                      placeholder="istruttore@email.it"
-                      style={inputStyle} />
+                      placeholder="istruttore@email.it" style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>Nome club *</label>
-                    <input
-                      type="text"
-                      value={newInstructor.club_name}
+                    <input type="text" value={newInstructor.club_name}
                       onChange={e => setNewInstructor({ ...newInstructor, club_name: e.target.value })}
-                      placeholder="Es: ASD Padel Roma"
-                      style={inputStyle} />
+                      placeholder="Es: ASD Padel Roma" style={inputStyle} />
                   </div>
                 </div>
                 <div style={{ background: 'rgba(200,245,58,0.06)', border: '1px solid rgba(200,245,58,0.15)', borderRadius: '8px', padding: '12px 14px', fontSize: '12px', color: '#8b93a8', marginBottom: '16px', lineHeight: '1.6' }}>
-                  💡 Dopo aver cliccato "Aggiungi", si aprirà WhatsApp con il link di registrazione da mandare all'istruttore. L'istruttore si registra e il sistema lo riconosce automaticamente.
+                  💡 Dopo aver cliccato "Aggiungi", si aprirà WhatsApp con il link da mandare all'istruttore. Si registra e il sistema lo riconosce automaticamente.
                 </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button onClick={() => { setShowAddInstructor(false); setNewInstructor({ email: '', club_name: '' }) }}
@@ -260,41 +293,59 @@ function SuperAdminContent() {
               </div>
             )}
 
-            {/* Lista inviti */}
-            {invites.length === 0 ? (
+            {/* Lista istruttori */}
+            {instructors.length === 0 ? (
               <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '40px', textAlign: 'center', color: '#5a5a6a' }}>
                 Nessun istruttore ancora. Clicca "+ Aggiungi istruttore" per iniziare.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {invites.map(invite => (
-                  <div key={invite.id} style={{ background: '#161b27', border: `1px solid ${invite.used ? 'rgba(56,201,122,0.2)' : 'rgba(245,166,35,0.2)'}`, borderRadius: '14px', padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                {instructors.map(instructor => (
+                  <div key={instructor.invite_id} style={{
+                    background: '#161b27',
+                    border: `1px solid ${instructor.used ? 'rgba(56,201,122,0.2)' : 'rgba(245,166,35,0.2)'}`,
+                    borderRadius: '14px', padding: '18px 20px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap'
+                  }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                        <div style={{ fontSize: '15px', fontWeight: '700' }}>{invite.email}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                        <div style={{ fontSize: '15px', fontWeight: '700' }}>{instructor.email}</div>
                         <span style={{
                           fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '20px',
-                          background: invite.used ? 'rgba(56,201,122,0.12)' : 'rgba(245,166,35,0.12)',
-                          color: invite.used ? '#38c97a' : '#f5a623'
+                          background: instructor.used ? 'rgba(56,201,122,0.12)' : 'rgba(245,166,35,0.12)',
+                          color: instructor.used ? '#38c97a' : '#f5a623'
                         }}>
-                          {invite.used ? '✅ Registrato' : '⏳ In attesa'}
+                          {instructor.used ? '✅ Registrato' : '⏳ In attesa'}
                         </span>
+
+                        {/* Dropdown piano — solo se registrato e ha club */}
+                        {instructor.used && instructor.club_id && (
+                          <select
+                            value={instructor.club_plan ?? 'free'}
+                            onChange={e => handleChangePlan(instructor.club_id!, e.target.value)}
+                            style={{ background: '#1e2535', border: '1px solid rgba(255,255,255,0.12)', color: '#c8f53a', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', outline: 'none', cursor: 'pointer' }}>
+                            <option value="free">Free</option>
+                            <option value="starter">Starter €29/mese</option>
+                            <option value="pro">Pro €69/mese</option>
+                          </select>
+                        )}
                       </div>
-                      <div style={{ fontSize: '13px', color: '#5a5a6a' }}>🏟️ {invite.club_name}</div>
+                      <div style={{ fontSize: '13px', color: '#5a5a6a' }}>🏟️ {instructor.club_name}</div>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      {!invite.used && (
+
+                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                      {!instructor.used && (
                         <button
                           onClick={() => {
                             const link = 'https://padelapp-zeta.vercel.app/login'
-                            const msg  = `Ciao! Il tuo accesso a Remate è stato attivato 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${invite.email}) per registrarti.`
+                            const msg  = `Ciao! Il tuo accesso a Remate è stato attivato 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${instructor.email}) per registrarti.`
                             window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
                           }}
                           style={{ background: '#25D366', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
-                          📱 Rimanda link
+                          📱 Manda link
                         </button>
                       )}
-                      <button onClick={() => handleRevokeInvite(invite)}
+                      <button onClick={() => handleRevokeInstructor(instructor)}
                         style={{ background: 'rgba(232,88,88,0.08)', border: '1px solid rgba(232,88,88,0.15)', color: '#e85858', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' }}>
                         Revoca
                       </button>
@@ -327,8 +378,7 @@ function SuperAdminContent() {
                     <tr key={club.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                       <td style={{ padding: '14px 16px', fontWeight: '600' }}>{club.name}</td>
                       <td style={{ padding: '14px 16px' }}>
-                        <select
-                          value={club.plan}
+                        <select value={club.plan}
                           onChange={async e => {
                             await supabase.from('clubs').update({ plan: e.target.value }).eq('id', club.id)
                             await loadData()
@@ -343,7 +393,14 @@ function SuperAdminContent() {
                         {new Date(club.created_at).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </td>
                       <td style={{ padding: '14px 16px' }}>
-                        <button onClick={() => handleDeleteClub(club)}
+                        <button onClick={async () => {
+                          if (!confirm(`Eliminare il club "${club.name}"?`)) return
+                          await supabase.from('instructor_clubs').delete().eq('club_id', club.id)
+                          await supabase.from('lessons').delete().eq('club_id', club.id)
+                          await supabase.from('students').delete().eq('club_id', club.id)
+                          await supabase.from('clubs').delete().eq('id', club.id)
+                          await loadData()
+                        }}
                           style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.2)', color: '#e85858', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>
                           Elimina
                         </button>
