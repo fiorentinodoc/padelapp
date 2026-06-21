@@ -20,7 +20,7 @@ export default function CentriPage() {
   const [editingClub, setEditingClub] = useState<Club | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [form, setForm] = useState({ name: '' })
-  const { activeClub, setActiveClub } = useClub()
+  const { activeClub, setActiveClub, refreshClub } = useClub()
   const { bg, surface, surface2, border, text, textSub, textMuted, pc } = useTheme()
   const router = useRouter()
   const supabase = createClient()
@@ -111,6 +111,7 @@ export default function CentriPage() {
 
     setShowModal(false)
     await loadData()
+    refreshClub()
     setSaving(false)
   }
 
@@ -121,6 +122,7 @@ export default function CentriPage() {
     await supabase.from('students').delete().eq('club_id', club.id)
     await supabase.from('clubs').delete().eq('id', club.id)
     await loadData()
+    refreshClub()
   }
 
   const inputStyle: React.CSSProperties = {
