@@ -8,7 +8,6 @@ import { useClub, useTheme } from '../club-context'
 interface Club {
   id: string
   name: string
-  address: string | null
   plan: string
 }
 
@@ -40,9 +39,9 @@ export default function CentriPage() {
     if (!user) { router.push('/login'); return }
 
     const { data: ic } = await supabase
-      .from('instructor_clubs')
-      .select('clubs(id, name, address, plan)')
-      .eq('profile_id', user.id)
+  .from('instructor_clubs')
+  .select('clubs(id, name, plan)')
+  .eq('profile_id', user.id)
 
     const clubList = ic?.map((c: any) => c.clubs).filter(Boolean) ?? []
     setClubs(clubList)
