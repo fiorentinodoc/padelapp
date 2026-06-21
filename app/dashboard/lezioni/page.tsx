@@ -48,8 +48,8 @@ export default function LezioniPage() {
   }, [])
 
   useEffect(() => {
-    if (activeClub) loadLessons()
-  }, [activeClub])
+  if (clubs.length > 0) loadLessons()
+}, [clubs, activeClub])
 
   async function loadLessons() {
     if (!activeClub) return
