@@ -29,6 +29,7 @@ const LEVEL_COLORS = ['#c8f53a', '#5b7fff', '#38c97a', '#f5a623', '#e85858']
 export default function LezioniPage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [clubs, setClubs] = useState<ClubLocal[]>([])
+  const [filterClubId, setFilterClubId] = useState<string>('all')
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -54,16 +55,13 @@ export default function LezioniPage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  useEffect(() => {
-    loadLessons()
-  }, [])
+  useEffect(() => { loadLessons() }, [])
 
   async function loadLessons() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
     setLoading(true)
 
-    // Carica clubs direttamente dal DB
     const { data: ic } = await supabase
       .from('instructor_clubs')
       .select('clubs(id, name, plan)')
@@ -92,7 +90,7 @@ export default function LezioniPage() {
       title: '', level: 'intermediate', court: '',
       date, time, duration_min: '90',
       max_spots: '4', recurrence: 'none',
-      club_id: activeClub?.id ?? clubs[0]?.id ?? ''
+      club_id: filterClubId !== 'all' ? filterClubId : (activeClub?.id ?? clubs[0]?.id ?? '')
     })
     setError('')
     setShowModal(true)
@@ -200,7 +198,11 @@ export default function LezioniPage() {
 
   function lessonsForDay(date: Date): Lesson[] {
     const dateStr = date.toISOString().split('T')[0]
-    return lessons.filter(l => l.starts_at.split('T')[0] === dateStr)
+    return lessons.filter(l => {
+      const matchDate = l.starts_at.split('T')[0] === dateStr
+      const matchClub = filterClubId === 'all' || l.club_id === filterClubId
+      return matchDate && matchClub
+    })
   }
 
   const inputStyle: React.CSSProperties = {
@@ -257,13 +259,18 @@ export default function LezioniPage() {
           </div>
         </div>
 
-        {/* Legenda centri */}
+        {/* Filtro centri */}
         {clubs.length > 1 && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div onClick={() => setFilterClubId('all')}
+              style={{ display: 'flex', alignItems: 'center', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${filterClubId === 'all' ? text : border}`, cursor: 'pointer', background: filterClubId === 'all' ? text : surface2 }}>
+              <span style={{ color: filterClubId === 'all' ? bg : textSub, fontWeight: filterClubId === 'all' ? '700' : '400' }}>Tutti</span>
+            </div>
             {clubs.map((club, i) => (
-              <div key={club.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: surface2, padding: '4px 10px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${border}` }}>
+              <div key={club.id} onClick={() => setFilterClubId(club.id)}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${filterClubId === club.id ? LEVEL_COLORS[i % LEVEL_COLORS.length] : border}`, cursor: 'pointer', background: filterClubId === club.id ? `${LEVEL_COLORS[i % LEVEL_COLORS.length]}20` : surface2 }}>
                 <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: LEVEL_COLORS[i % LEVEL_COLORS.length], flexShrink: 0 }} />
-                <span style={{ color: text, fontWeight: '600' }}>{club.name}</span>
+                <span style={{ color: text, fontWeight: filterClubId === club.id ? '700' : '400' }}>{club.name}</span>
               </div>
             ))}
           </div>
