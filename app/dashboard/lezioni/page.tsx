@@ -38,6 +38,10 @@ export default function LezioniPage() {
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [isMobile, setIsMobile] = useState(false)
+  const [bookings, setBookings] = useState<any[]>([])
+  const [availableStudents, setAvailableStudents] = useState<any[]>([])
+  const [addingStudent, setAddingStudent] = useState(false)
+  const [selectedStudentId, setSelectedStudentId] = useState('')
   const [form, setForm] = useState({
     title: '', level: 'intermediate', court: '',
     date: '', time: '', duration_min: '90',
@@ -84,8 +88,59 @@ export default function LezioniPage() {
     setLoading(false)
   }
 
+  async function loadBookings(lessonId: string, clubId: string) {
+    const { data: booked } = await supabase
+      .from('bookings')
+      .select('id, student_id, status, students(first_name, last_name, level)')
+      .eq('lesson_id', lessonId)
+      .eq('status', 'confirmed')
+
+    setBookings(booked ?? [])
+
+    const bookedIds = (booked ?? []).map((b: any) => b.student_id)
+
+    let query = supabase
+      .from('students')
+      .select('id, first_name, last_name, level')
+      .eq('club_id', clubId)
+      .eq('status', 'active')
+
+    if (bookedIds.length > 0) {
+      query = query.not('id', 'in', `(${bookedIds.join(',')})`)
+    }
+
+    const { data: available } = await query
+    setAvailableStudents(available ?? [])
+    setSelectedStudentId('')
+  }
+
+  async function handleAddBooking() {
+    if (!editingLesson || !selectedStudentId) return
+    setAddingStudent(true)
+
+    await supabase.from('bookings').insert({
+      lesson_id:    editingLesson.id,
+      student_id:   selectedStudentId,
+      status:       'confirmed',
+      confirmed_at: new Date().toISOString()
+    })
+
+    await loadBookings(editingLesson.id, editingLesson.club_id)
+    setAddingStudent(false)
+  }
+
+  async function handleRemoveBooking(bookingId: string) {
+    if (!confirm('Rimuovere questo alunno dalla lezione?')) return
+    await supabase.from('bookings')
+      .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+      .eq('id', bookingId)
+    if (editingLesson) await loadBookings(editingLesson.id, editingLesson.club_id)
+  }
+
   function openNew(date: string, time: string) {
     setEditingLesson(null)
+    setBookings([])
+    setAvailableStudents([])
     setForm({
       title: '', level: 'intermediate', court: '',
       date, time, duration_min: '90',
@@ -112,6 +167,9 @@ export default function LezioniPage() {
       club_id:      lesson.club_id
     })
     setError('')
+    setBookings([])
+    setAvailableStudents([])
+    loadBookings(lesson.id, lesson.club_id)
     setShowModal(true)
   }
 
@@ -162,6 +220,7 @@ export default function LezioniPage() {
   async function handleCancel(lesson: Lesson) {
     if (!confirm(`Annullare la lezione "${lesson.title}"?`)) return
     await supabase.from('lessons').update({ cancelled_at: new Date().toISOString() }).eq('id', lesson.id)
+    setShowModal(false)
     await loadLessons()
   }
 
@@ -203,6 +262,10 @@ export default function LezioniPage() {
       const matchClub = filterClubId === 'all' || l.club_id === filterClubId
       return matchDate && matchClub
     })
+  }
+
+  const levelLabel: Record<string, string> = {
+    beginner: 'Princ.', intermediate: 'Interm.', advanced: 'Avanz.'
   }
 
   const inputStyle: React.CSSProperties = {
@@ -397,7 +460,8 @@ export default function LezioniPage() {
       {showModal && (
         <div onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}>
-          <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: isMobile ? '20px 20px 0 0' : '20px', padding: '24px', width: '100%', maxWidth: isMobile ? '100%' : '500px', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: isMobile ? '20px 20px 0 0' : '20px', padding: '24px', width: '100%', maxWidth: isMobile ? '100%' : '520px', maxHeight: '90vh', overflowY: 'auto' }}>
+
             <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '6px', color: text }}>
               {editingLesson ? 'Modifica lezione' : 'Nuova lezione'}
             </div>
@@ -461,12 +525,79 @@ export default function LezioniPage() {
             </div>
 
             {!editingLesson && (
-              <div style={{ marginBottom: '20px' }}>
+              <div style={{ marginBottom: '14px' }}>
                 <label style={labelStyle}>Ricorrenza</label>
                 <select value={form.recurrence} onChange={e => setForm({ ...form, recurrence: e.target.value })} style={{ ...inputStyle, outline: 'none' }}>
                   <option value="none">Lezione singola</option>
                   <option value="weekly">Settimanale (12 settimane)</option>
                 </select>
+              </div>
+            )}
+
+            {/* Sezione prenotazioni — solo per lezioni esistenti */}
+            {editingLesson && (
+              <div style={{ marginBottom: '20px', borderTop: `1px solid ${border}`, paddingTop: '16px', marginTop: '4px' }}>
+                <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '10px', color: text }}>
+                  👥 Alunni iscritti ({bookings.length}/{form.max_spots})
+                </div>
+
+                {/* Barra occupazione */}
+                <div style={{ height: '6px', background: surface2, borderRadius: '3px', marginBottom: '12px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.min((bookings.length / parseInt(form.max_spots)) * 100, 100)}%`, background: bookings.length >= parseInt(form.max_spots) ? '#e85858' : '#38c97a', borderRadius: '3px' }} />
+                </div>
+
+                {/* Lista iscritti */}
+                {bookings.length === 0 ? (
+                  <div style={{ fontSize: '13px', color: textMuted, marginBottom: '12px', fontStyle: 'italic' }}>Nessun alunno iscritto</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                    {bookings.map((b: any) => (
+                      <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: surface2, borderRadius: '8px', padding: '8px 12px' }}>
+                        <div style={{ flex: 1, fontSize: '13px', color: text, fontWeight: '600' }}>
+                          {b.students?.first_name} {b.students?.last_name}
+                        </div>
+                        <div style={{ fontSize: '11px', color: textMuted }}>
+                          {levelLabel[b.students?.level] ?? b.students?.level}
+                        </div>
+                        <button onClick={() => handleRemoveBooking(b.id)}
+                          style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.2)', color: '#e85858', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          Rimuovi
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Aggiungi alunno */}
+                {bookings.length < parseInt(form.max_spots) && availableStudents.length > 0 && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={selectedStudentId}
+                      onChange={e => setSelectedStudentId(e.target.value)}
+                      style={{ flex: 1, padding: '8px 10px', background: surface2, border: `1px solid ${border}`, borderRadius: '8px', color: text, fontSize: '13px', outline: 'none' }}>
+                      <option value="">Seleziona alunno...</option>
+                      {availableStudents.map((s: any) => (
+                        <option key={s.id} value={s.id}>
+                          {s.first_name} {s.last_name} — {levelLabel[s.level] ?? s.level}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleAddBooking}
+                      disabled={!selectedStudentId || addingStudent}
+                      style={{ background: selectedStudentId ? pc : surface2, border: 'none', color: '#0e1117', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: selectedStudentId ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap', opacity: selectedStudentId ? 1 : 0.5 }}>
+                      {addingStudent ? '...' : '+ Aggiungi'}
+                    </button>
+                  </div>
+                )}
+
+                {bookings.length >= parseInt(form.max_spots) && (
+                  <div style={{ fontSize: '12px', color: '#e85858', fontWeight: '600' }}>⚠️ Lezione al completo</div>
+                )}
+
+                {availableStudents.length === 0 && bookings.length < parseInt(form.max_spots) && (
+                  <div style={{ fontSize: '12px', color: textMuted }}>Tutti gli alunni del club sono già iscritti</div>
+                )}
               </div>
             )}
 
@@ -477,7 +608,7 @@ export default function LezioniPage() {
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => { setShowModal(false); setError('') }}
                 style={{ flex: 1, padding: '13px', background: 'transparent', border: `1px solid ${border}`, color: textSub, borderRadius: '10px', fontSize: '14px', cursor: 'pointer' }}>
-                Annulla
+                Chiudi
               </button>
               {editingLesson && (
                 <button onClick={() => handleCancel(editingLesson)}
