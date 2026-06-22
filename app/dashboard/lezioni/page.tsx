@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useClub, useTheme } from '../club-context'
@@ -18,10 +18,17 @@ interface Lesson {
   club_id: string
 }
 
+interface ClubLocal {
+  id: string
+  name: string
+  plan: string
+}
+
 const LEVEL_COLORS = ['#c8f53a', '#5b7fff', '#38c97a', '#f5a623', '#e85858']
 
 export default function LezioniPage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
+  const [clubs, setClubs] = useState<ClubLocal[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -35,7 +42,7 @@ export default function LezioniPage() {
     date: '', time: '', duration_min: '90',
     max_spots: '4', recurrence: 'none', club_id: ''
   })
-  const { activeClub, clubs } = useClub()
+  const { activeClub } = useClub()
   const { bg, surface, surface2, border, text, textSub, textMuted, pc, isDark } = useTheme()
   const router = useRouter()
   const supabase = createClient()
@@ -48,14 +55,24 @@ export default function LezioniPage() {
   }, [])
 
   useEffect(() => {
-  if (clubs.length > 0) loadLessons()
-}, [clubs, activeClub])
+    loadLessons()
+  }, [])
 
   async function loadLessons() {
-    if (!activeClub) return
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { router.push('/login'); return }
     setLoading(true)
 
-    const clubIds = clubs.map(c => c.id)
+    // Carica clubs direttamente dal DB
+    const { data: ic } = await supabase
+      .from('instructor_clubs')
+      .select('clubs(id, name, plan)')
+      .eq('profile_id', user.id)
+
+    const clubList: ClubLocal[] = ic?.map((c: any) => c.clubs).filter(Boolean) ?? []
+    setClubs(clubList)
+
+    const clubIds = clubList.map(c => c.id)
     if (clubIds.length === 0) { setLoading(false); return }
 
     const { data } = await supabase
@@ -75,7 +92,7 @@ export default function LezioniPage() {
       title: '', level: 'intermediate', court: '',
       date, time, duration_min: '90',
       max_spots: '4', recurrence: 'none',
-      club_id: activeClub?.id ?? ''
+      club_id: activeClub?.id ?? clubs[0]?.id ?? ''
     })
     setError('')
     setShowModal(true)
@@ -90,8 +107,7 @@ export default function LezioniPage() {
       title:        lesson.title,
       level:        lesson.level,
       court:        lesson.court,
-      date,
-      time,
+      date, time,
       duration_min: String(lesson.duration_min),
       max_spots:    String(lesson.max_spots),
       recurrence:   lesson.recurrence,
@@ -151,8 +167,6 @@ export default function LezioniPage() {
     await loadLessons()
   }
 
-  // ── CALENDARIO ──────────────────────────────────────────────
-
   function getWeekDays(date: Date): Date[] {
     const monday = new Date(date)
     monday.setDate(date.getDate() - ((date.getDay() + 6) % 7))
@@ -181,9 +195,8 @@ export default function LezioniPage() {
   const clubColorMap: Record<string, string> = {}
   clubs.forEach((c, i) => { clubColorMap[c.id] = LEVEL_COLORS[i % LEVEL_COLORS.length] })
 
-  const dayLabel    = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
-  const monthLabel  = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre']
-  const levelLabel: Record<string, string> = { beginner: 'Princ.', intermediate: 'Interm.', advanced: 'Avanz.' }
+  const dayLabel   = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
+  const monthLabel = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre']
 
   function lessonsForDay(date: Date): Lesson[] {
     const dateStr = date.toISOString().split('T')[0]
@@ -211,42 +224,55 @@ export default function LezioniPage() {
     <div style={{ padding: isMobile ? '12px' : '24px', fontFamily: 'system-ui', color: text, background: bg, minHeight: '100vh' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button onClick={() => setCurrentDate(d => { const n = new Date(d); viewMode === 'week' ? n.setDate(n.getDate() - 7) : n.setMonth(n.getMonth() - 1); return n })}
-            style={{ background: surface2, border: `1px solid ${border}`, color: text, width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' }}>‹</button>
-          <div style={{ fontSize: '15px', fontWeight: '700', minWidth: '160px', textAlign: 'center' }}>
-            {viewMode === 'week'
-              ? `${weekDays[0].getDate()} — ${weekDays[6].getDate()} ${monthLabel[weekDays[6].getMonth()]} ${weekDays[6].getFullYear()}`
-              : `${monthLabel[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button onClick={() => setCurrentDate(d => { const n = new Date(d); viewMode === 'week' ? n.setDate(n.getDate() - 7) : n.setMonth(n.getMonth() - 1); return n })}
+              style={{ background: surface2, border: `1px solid ${border}`, color: text, width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' }}>‹</button>
+            <div style={{ fontSize: '15px', fontWeight: '700', minWidth: '160px', textAlign: 'center' }}>
+              {viewMode === 'week'
+                ? `${weekDays[0].getDate()} — ${weekDays[6].getDate()} ${monthLabel[weekDays[6].getMonth()]} ${weekDays[6].getFullYear()}`
+                : `${monthLabel[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
+            </div>
+            <button onClick={() => setCurrentDate(d => { const n = new Date(d); viewMode === 'week' ? n.setDate(n.getDate() + 7) : n.setMonth(n.getMonth() + 1); return n })}
+              style={{ background: surface2, border: `1px solid ${border}`, color: text, width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' }}>›</button>
+            <button onClick={() => setCurrentDate(new Date())}
+              style={{ background: surface2, border: `1px solid ${border}`, color: textSub, padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' }}>
+              Oggi
+            </button>
           </div>
-          <button onClick={() => setCurrentDate(d => { const n = new Date(d); viewMode === 'week' ? n.setDate(n.getDate() + 7) : n.setMonth(n.getMonth() + 1); return n })}
-            style={{ background: surface2, border: `1px solid ${border}`, color: text, width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' }}>›</button>
-          <button onClick={() => setCurrentDate(new Date())}
-            style={{ background: surface2, border: `1px solid ${border}`, color: textSub, padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' }}>
-            Oggi
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', background: surface2, padding: '3px', borderRadius: '8px', gap: '2px' }}>
+              {(['week', 'month'] as const).map(v => (
+                <div key={v} onClick={() => setViewMode(v)}
+                  style={{ padding: '5px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: viewMode === v ? '700' : '400', background: viewMode === v ? text : 'transparent', color: viewMode === v ? bg : textSub }}>
+                  {v === 'week' ? 'Sett.' : 'Mese'}
+                </div>
+              ))}
+            </div>
+            <button onClick={() => openNew(new Date().toISOString().split('T')[0], '10:00')}
+              style={{ background: pc, border: 'none', color: '#0e1117', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              + Nuova
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ display: 'flex', background: surface2, padding: '3px', borderRadius: '8px', gap: '2px' }}>
-            {(['week', 'month'] as const).map(v => (
-              <div key={v} onClick={() => setViewMode(v)}
-                style={{ padding: '5px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: viewMode === v ? '700' : '400', background: viewMode === v ? text : 'transparent', color: viewMode === v ? bg : textSub }}>
-                {v === 'week' ? 'Sett.' : 'Mese'}
+
+        {/* Legenda centri */}
+        {clubs.length > 1 && (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {clubs.map((club, i) => (
+              <div key={club.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: surface2, padding: '4px 10px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${border}` }}>
+                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: LEVEL_COLORS[i % LEVEL_COLORS.length], flexShrink: 0 }} />
+                <span style={{ color: text, fontWeight: '600' }}>{club.name}</span>
               </div>
             ))}
           </div>
-          <button onClick={() => openNew(new Date().toISOString().split('T')[0], '10:00')}
-            style={{ background: pc, border: 'none', color: '#0e1117', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            + Nuova
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* VISTA SETTIMANA */}
+      {/* VISTA SETTIMANA DESKTOP */}
       {viewMode === 'week' && !isMobile && (
         <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: '16px', overflow: 'hidden' }}>
-          {/* Header giorni */}
           <div style={{ display: 'grid', gridTemplateColumns: '50px repeat(7, 1fr)', borderBottom: `1px solid ${border}` }}>
             <div style={{ padding: '10px', background: surface2 }} />
             {weekDays.map((d, i) => {
@@ -262,7 +288,6 @@ export default function LezioniPage() {
             })}
           </div>
 
-          {/* Griglia ore */}
           <div style={{ overflowY: 'auto', maxHeight: '600px' }}>
             {hours.map(hour => (
               <div key={hour} style={{ display: 'grid', gridTemplateColumns: '50px repeat(7, 1fr)', borderBottom: `1px solid ${border}`, minHeight: '60px' }}>
@@ -273,7 +298,7 @@ export default function LezioniPage() {
                   const dayLessons = lessonsForDay(day).filter(l => new Date(l.starts_at).getHours() === hour)
                   return (
                     <div key={di} onClick={() => openNew(day.toISOString().split('T')[0], `${String(hour).padStart(2,'0')}:00`)}
-                      style={{ borderLeft: `1px solid ${border}`, padding: '2px', cursor: 'pointer', minHeight: '60px', position: 'relative' }}>
+                      style={{ borderLeft: `1px solid ${border}`, padding: '2px', cursor: 'pointer', minHeight: '60px' }}>
                       {dayLessons.map(lesson => (
                         <div key={lesson.id}
                           onClick={e => { e.stopPropagation(); openEdit(lesson) }}
@@ -373,14 +398,12 @@ export default function LezioniPage() {
               {editingLesson ? editingLesson.title : 'Compila i dettagli della lezione'}
             </div>
 
-            {/* Nome */}
             <div style={{ marginBottom: '14px' }}>
               <label style={labelStyle}>Nome gruppo *</label>
               <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
                 placeholder="Es: Gruppo Intermedio B" style={inputStyle} />
             </div>
 
-            {/* Centro */}
             <div style={{ marginBottom: '14px' }}>
               <label style={labelStyle}>Centro *</label>
               <select value={form.club_id} onChange={e => setForm({ ...form, club_id: e.target.value })} style={{ ...inputStyle, outline: 'none' }}>
@@ -389,7 +412,6 @@ export default function LezioniPage() {
               </select>
             </div>
 
-            {/* Data e ora */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
               <div>
                 <label style={labelStyle}>Data *</label>
@@ -401,7 +423,6 @@ export default function LezioniPage() {
               </div>
             </div>
 
-            {/* Campo e durata */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
               <div>
                 <label style={labelStyle}>Campo *</label>
@@ -416,7 +437,6 @@ export default function LezioniPage() {
               </div>
             </div>
 
-            {/* Livello e posti */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
               <div>
                 <label style={labelStyle}>Livello</label>
@@ -433,7 +453,6 @@ export default function LezioniPage() {
               </div>
             </div>
 
-            {/* Ricorrenza */}
             {!editingLesson && (
               <div style={{ marginBottom: '20px' }}>
                 <label style={labelStyle}>Ricorrenza</label>
