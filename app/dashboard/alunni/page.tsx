@@ -15,20 +15,29 @@ interface Student {
   group_name: string | null
   status: string
   joined_at: string
+  club_ids?: string[]
+}
+
+interface ClubLocal {
+  id: string
+  name: string
 }
 
 export default function AlunniPage() {
   const [students, setStudents] = useState<Student[]>([])
+  const [clubs, setClubs] = useState<ClubLocal[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('all')
+  const [clubFilter, setClubFilter] = useState('all')
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const [form, setForm] = useState({
     first_name: '', last_name: '', email: '',
-    phone: '', level: 'intermediate', group_name: ''
+    phone: '', level: 'intermediate', group_name: '',
+    club_ids: [] as string[]
   })
   const { activeClub } = useClub()
   const { bg, surface, surface2, border, text, textSub, textMuted, pc } = useTheme()
@@ -42,41 +51,55 @@ export default function AlunniPage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  useEffect(() => {
-    if (activeClub) loadData()
-  }, [activeClub])
+  useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    if (!activeClub) return
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    const { data: studentClubIds } = await supabase
+    // Carica tutti i centri dell'istruttore
+    const { data: ic } = await supabase
+      .from('instructor_clubs')
+      .select('clubs(id, name)')
+      .eq('profile_id', user.id)
+
+    const clubList: ClubLocal[] = ic?.map((c: any) => c.clubs).filter(Boolean) ?? []
+    setClubs(clubList)
+
+    const clubIds = clubList.map(c => c.id)
+    if (clubIds.length === 0) { setStudents([]); setLoading(false); return }
+
+    // Tutti i collegamenti studente-centro per questi centri
+    const { data: scLinks } = await supabase
       .from('student_clubs')
-      .select('student_id')
-      .eq('club_id', activeClub.id)
+      .select('student_id, club_id')
+      .in('club_id', clubIds)
 
-    const ids = studentClubIds?.map((s: any) => s.student_id) ?? []
-
-    if (ids.length === 0) {
-      setStudents([])
-      setLoading(false)
-      return
-    }
+    const studentIds = [...new Set((scLinks ?? []).map((s: any) => s.student_id))]
+    if (studentIds.length === 0) { setStudents([]); setLoading(false); return }
 
     const { data } = await supabase
       .from('students')
       .select('*')
-      .in('id', ids)
+      .in('id', studentIds)
       .order('joined_at', { ascending: false })
 
-    setStudents(data ?? [])
+    // Aggiungi a ogni studente la lista dei club a cui è iscritto
+    const enriched: Student[] = (data ?? []).map((s: any) => ({
+      ...s,
+      club_ids: (scLinks ?? []).filter((l: any) => l.student_id === s.id).map((l: any) => l.club_id)
+    }))
+
+    setStudents(enriched)
     setLoading(false)
   }
 
   function openNew() {
     setEditingStudent(null)
-    setForm({ first_name: '', last_name: '', email: '', phone: '', level: 'intermediate', group_name: '' })
+    setForm({
+      first_name: '', last_name: '', email: '', phone: '', level: 'intermediate', group_name: '',
+      club_ids: activeClub ? [activeClub.id] : []
+    })
     setError('')
     setShowModal(true)
   }
@@ -89,41 +112,33 @@ export default function AlunniPage() {
       email:      student.email ?? '',
       phone:      student.phone ?? '',
       level:      student.level,
-      group_name: student.group_name ?? ''
+      group_name: student.group_name ?? '',
+      club_ids:   student.club_ids ?? []
     })
     setError('')
     setShowModal(true)
   }
 
+  function toggleClubSelection(clubId: string) {
+    setForm(f => ({
+      ...f,
+      club_ids: f.club_ids.includes(clubId)
+        ? f.club_ids.filter(id => id !== clubId)
+        : [...f.club_ids, clubId]
+    }))
+  }
+
   async function handleSave() {
-    if (!activeClub) return
     if (!form.first_name || !form.last_name) {
       setError('Nome e cognome sono obbligatori')
       return
     }
+    if (form.club_ids.length === 0) {
+      setError('Seleziona almeno un centro')
+      return
+    }
     setSaving(true)
     setError('')
-
-    if (!editingStudent) {
-      const { data: clubData } = await supabase
-        .from('clubs')
-        .select('plan, max_students')
-        .eq('id', activeClub.id)
-        .single()
-
-      const planLimits: Record<string, number> = { free: 20, starter: 100, pro: 99999 }
-      const maxStudents = planLimits[clubData?.plan ?? 'free']
-
-      if (students.length >= maxStudents) {
-        setError(
-          clubData?.plan === 'free'
-            ? '⚠️ Piano Free: limite di 20 alunni raggiunto. Passa a Starter per fino a 100 alunni.'
-            : '⚠️ Piano Starter: limite di 100 alunni raggiunto. Passa a Pro per alunni illimitati.'
-        )
-        setSaving(false)
-        return
-      }
-    }
 
     if (editingStudent) {
       const { error: updateError } = await supabase
@@ -139,11 +154,48 @@ export default function AlunniPage() {
         .eq('id', editingStudent.id)
 
       if (updateError) { setError('Errore: ' + updateError.message); setSaving(false); return }
+
+      // Aggiorna i collegamenti centro: rimuovi quelli deselezionati, aggiungi i nuovi
+      const currentIds = editingStudent.club_ids ?? []
+      const toRemove = currentIds.filter(id => !form.club_ids.includes(id))
+      const toAdd    = form.club_ids.filter(id => !currentIds.includes(id))
+
+      if (toRemove.length > 0) {
+        await supabase.from('student_clubs')
+          .delete()
+          .eq('student_id', editingStudent.id)
+          .in('club_id', toRemove)
+      }
+      if (toAdd.length > 0) {
+        await supabase.from('student_clubs').insert(
+          toAdd.map(clubId => ({ student_id: editingStudent.id, club_id: clubId }))
+        )
+      }
     } else {
+      // Verifica limite piano sul primo centro selezionato
+      const { data: clubData } = await supabase
+        .from('clubs')
+        .select('plan')
+        .eq('id', form.club_ids[0])
+        .single()
+
+      const planLimits: Record<string, number> = { free: 20, starter: 100, pro: 99999 }
+      const maxStudents = planLimits[clubData?.plan ?? 'free']
+
+      if (students.length >= maxStudents) {
+        setError(
+          clubData?.plan === 'free'
+            ? '⚠️ Piano Free: limite di 20 alunni raggiunto. Passa a Starter per fino a 100 alunni.'
+            : '⚠️ Piano Starter: limite di 100 alunni raggiunto. Passa a Pro per alunni illimitati.'
+        )
+        setSaving(false)
+        return
+      }
+
       const { data: newStudent, error: studentError } = await supabase
         .from('students')
         .insert({
-          club_id:    activeClub.id,
+          club_id:    form.club_ids[0],
           first_name: form.first_name,
           last_name:  form.last_name,
           email:      form.email || null,
@@ -158,10 +210,9 @@ export default function AlunniPage() {
       if (studentError) { setError('Errore: ' + studentError.message); setSaving(false); return }
 
       if (newStudent) {
-        await supabase.from('student_clubs').insert({
-          student_id: newStudent.id,
-          club_id:    activeClub.id
-        })
+        await supabase.from('student_clubs').insert(
+          form.club_ids.map(clubId => ({ student_id: newStudent.id, club_id: clubId }))
+        )
       }
     }
 
@@ -183,7 +234,14 @@ export default function AlunniPage() {
     beginner: '#f5a623', intermediate: '#5b7fff', advanced: '#38c97a'
   }
 
-  const filtered = filter === 'all' ? students : students.filter(s => s.status === filter)
+  const clubNameMap: Record<string, string> = {}
+  clubs.forEach(c => { clubNameMap[c.id] = c.name })
+
+  const filtered = students.filter(s => {
+    const matchStatus = filter === 'all' || s.status === filter
+    const matchClub   = clubFilter === 'all' || (s.club_ids ?? []).includes(clubFilter)
+    return matchStatus && matchClub
+  })
 
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '11px 12px', background: surface2,
@@ -217,8 +275,8 @@ export default function AlunniPage() {
         </button>
       </div>
 
-      {/* Filtri */}
-      <div style={{ display: 'flex', gap: '4px', background: surface2, padding: '4px', borderRadius: '10px', width: 'fit-content', marginBottom: '20px' }}>
+      {/* Filtri status */}
+      <div style={{ display: 'flex', gap: '4px', background: surface2, padding: '4px', borderRadius: '10px', width: 'fit-content', marginBottom: '14px' }}>
         {[
           { value: 'all',    label: 'Tutti' },
           { value: 'active', label: 'Attivi' },
@@ -230,6 +288,22 @@ export default function AlunniPage() {
           </div>
         ))}
       </div>
+
+      {/* Filtro centro */}
+      {clubs.length > 1 && (
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
+          <div onClick={() => setClubFilter('all')}
+            style={{ padding: '5px 14px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${clubFilter === 'all' ? pc : border}`, cursor: 'pointer', background: clubFilter === 'all' ? `${pc}18` : surface2, color: clubFilter === 'all' ? pc : textSub, fontWeight: clubFilter === 'all' ? '700' : '400' }}>
+            🏟️ Tutti i centri
+          </div>
+          {clubs.map(club => (
+            <div key={club.id} onClick={() => setClubFilter(club.id)}
+              style={{ padding: '5px 14px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${clubFilter === club.id ? pc : border}`, cursor: 'pointer', background: clubFilter === club.id ? `${pc}18` : surface2, color: clubFilter === club.id ? pc : textSub, fontWeight: clubFilter === club.id ? '700' : '400' }}>
+              {club.name}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Lista */}
       {filtered.length === 0 ? (
@@ -261,6 +335,18 @@ export default function AlunniPage() {
                       {student.status === 'active' ? 'Attivo' : 'In pausa'}
                     </span>
                   </div>
+
+                  {/* Badge centri */}
+                  {clubs.length > 1 && (student.club_ids?.length ?? 0) > 0 && (
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                      {student.club_ids!.map(cid => (
+                        <span key={cid} style={{ background: 'rgba(91,127,255,0.1)', color: '#5b7fff', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: '600' }}>
+                          🏟️ {clubNameMap[cid] ?? '...'}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   {(student.email || student.phone) && (
                     <div style={{ fontSize: '12px', color: textMuted }}>
                       {student.email && <div>{student.email}</div>}
@@ -295,6 +381,27 @@ export default function AlunniPage() {
             <div style={{ fontSize: '13px', color: textMuted, marginBottom: '20px' }}>
               {editingStudent ? `${editingStudent.first_name} ${editingStudent.last_name}` : 'Inserisci i dati del nuovo alunno'}
             </div>
+
+            {/* Selezione centri — solo se più di 1 centro */}
+            {clubs.length > 1 && (
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>Centro/i *</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {clubs.map(club => {
+                    const checked = form.club_ids.includes(club.id)
+                    return (
+                      <div key={club.id} onClick={() => toggleClubSelection(club.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px', background: checked ? `${pc}12` : surface2, border: `1.5px solid ${checked ? pc : border}`, borderRadius: '8px', padding: '10px 12px', cursor: 'pointer' }}>
+                        <div style={{ width: '18px', height: '18px', borderRadius: '5px', border: `2px solid ${checked ? pc : textMuted}`, background: checked ? pc : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {checked && <span style={{ color: '#0e1117', fontSize: '12px', fontWeight: '900' }}>✓</span>}
+                        </div>
+                        <span style={{ fontSize: '13px', color: text, fontWeight: checked ? '600' : '400' }}>{club.name}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
               {[
