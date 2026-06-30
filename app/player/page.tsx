@@ -73,20 +73,20 @@ export default function AppHome() {
       }
 
       const { data: freeLessons } = await supabase
-        .from('lesson_availability')
-        .select('*')
-        .eq('club_id', student.club_id)
-        .eq('level', student.level)
-        .gt('available_spots', 0)
-        .gte('starts_at', now)
-        .order('starts_at', { ascending: true })
-        .limit(5)
+  .from('lesson_availability')
+  .select('*')
+  .eq('club_id', student.club_id)
+  .eq('level', student.level)
+  .gt('available_spots', 0)
+  .gte('starts_at', now)
+  .order('starts_at', { ascending: true })
+  .limit(10)
 
-      const filteredFree = (freeLessons ?? []).filter(
-        (l: any) => !bookedLessonIds.includes(l.id)
-      )
+const filteredFree = (freeLessons ?? []).filter(
+  (l: any) => !bookedLessonIds.includes(l.lesson_id)
+)
 
-      setFreeLesson(filteredFree.length > 0 ? (filteredFree[0] as any) : null)
+setFreeLesson(filteredFree.length > 0 ? (filteredFree[0] as any) : null)
     }
 
     setLoading(false)
@@ -161,9 +161,9 @@ export default function AppHome() {
           <div style={{ fontSize: '22px' }}>🔔</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13px', fontWeight: '700', color: '#f5a623', marginBottom: '2px' }}>Posto libero!</div>
-            <div style={{ fontSize: '12px', color: '#8b93a8' }}>
-              {freeLesson.title} · {new Date(freeLesson.starts_at).toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })}
-            </div>
+           <div style={{ fontSize: '12px', color: '#8b93a8' }}>
+  {freeLesson.title} · {new Date(freeLesson.starts_at).toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })} · {(freeLesson as any).available_spots} {(freeLesson as any).available_spots === 1 ? 'posto libero' : 'posti liberi'}
+</div>
           </div>
           <div style={{ fontSize: '12px', fontWeight: '700', color: '#f5a623', background: 'rgba(245,166,35,0.15)', padding: '4px 10px', borderRadius: '8px' }}>
             Prenota
