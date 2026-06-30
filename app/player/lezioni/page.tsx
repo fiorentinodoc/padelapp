@@ -103,24 +103,51 @@ export default function LezioniAppPage() {
     setLoading(false)
   }
 
-  async function handleBook(lessonId: string) {
-    if (!student) return
-    setBooking(lessonId)
+ async function handleBook(lessonId: string) {
+  if (!student) return
+  setBooking(lessonId)
 
-    const { error } = await supabase.from('bookings').insert({
-      lesson_id:    lessonId,
-      student_id:   student.id,
-      status:       'confirmed',
-      confirmed_at: new Date().toISOString()
-    })
+  const { error } = await supabase.from('bookings').insert({
+    lesson_id:    lessonId,
+    student_id:   student.id,
+    status:       'confirmed',
+    confirmed_at: new Date().toISOString()
+  })
 
-    if (error) {
-      alert('Errore: ' + error.message)
-    } else {
-      await loadData()
+  if (error) {
+    alert('Errore: ' + error.message)
+  } else {
+    // Manda notifica WhatsApp all'istruttore
+    const lesson = lessons.find(l => l.lesson_id === lessonId)
+    if (lesson) {
+      const { data: clubData } = await supabase
+        .from('clubs')
+        .select('whatsapp_number, name')
+        .eq('id', lesson.club_id)
+        .single()
+
+      if (clubData?.whatsapp_number) {
+        const date    = new Date(lesson.starts_at)
+        const dateStr = date.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
+        const timeStr = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+
+        const { data: profData } = await supabase
+          .from('profiles')
+          .select('first_name, last_name')
+          .eq('id', (await supabase.auth.getUser()).data.user?.id)
+          .single()
+
+        const studentName = profData ? `${profData.first_name} ${profData.last_name}` : 'Un alunno'
+        const cleaned     = clubData.whatsapp_number.replace(/\s+/g, '').replace(/[^\d+]/g, '')
+        const msg         = `🎾 Nuova prenotazione!\n\n*${studentName}* ha prenotato:\n📅 ${lesson.title}\n🗓 ${dateStr} alle ${timeStr}\n📍 ${lesson.court}\n\nCentro: ${clubData.name}`
+
+        window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(msg)}`, '_blank')
+      }
     }
-    setBooking(null)
+    await loadData()
   }
+  setBooking(null)
+}
 
   async function handleCancel(lessonId: string) {
     if (!student) return

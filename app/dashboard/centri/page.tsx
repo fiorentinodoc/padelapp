@@ -9,6 +9,7 @@ interface Club {
   id: string
   name: string
   plan: string
+  whatsapp_number: string | null
 }
 
 export default function CentriPage() {
@@ -19,7 +20,7 @@ export default function CentriPage() {
   const [error, setError] = useState('')
   const [editingClub, setEditingClub] = useState<Club | null>(null)
   const [isMobile, setIsMobile] = useState(false)
-  const [form, setForm] = useState({ name: '' })
+  const [form, setForm] = useState({ name: '', whatsapp_number: '' })
   const { activeClub, refreshClub } = useClub()
   const { bg, surface, surface2, border, text, textSub, textMuted, pc } = useTheme()
   const router = useRouter()
@@ -40,7 +41,7 @@ export default function CentriPage() {
 
     const { data: ic } = await supabase
       .from('instructor_clubs')
-      .select('clubs(id, name, plan)')
+      .select('clubs(id, name, plan, whatsapp_number)')
       .eq('profile_id', user.id)
 
     const clubList = ic?.map((c: any) => c.clubs).filter(Boolean) ?? []
@@ -50,14 +51,14 @@ export default function CentriPage() {
 
   function openNew() {
     setEditingClub(null)
-    setForm({ name: '' })
+    setForm({ name: '', whatsapp_number: '' })
     setError('')
     setShowModal(true)
   }
 
   function openEdit(club: Club) {
     setEditingClub(club)
-    setForm({ name: club.name })
+    setForm({ name: club.name, whatsapp_number: club.whatsapp_number ?? '' })
     setError('')
     setShowModal(true)
   }
@@ -73,7 +74,10 @@ export default function CentriPage() {
     if (editingClub) {
       const { error: updateError } = await supabase
         .from('clubs')
-        .update({ name: form.name })
+        .update({
+          name:             form.name,
+          whatsapp_number:  form.whatsapp_number || null
+        })
         .eq('id', editingClub.id)
 
       if (updateError) { setError('Errore: ' + updateError.message); setSaving(false); return }
@@ -98,7 +102,13 @@ export default function CentriPage() {
       const slug = form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
       const { data: newClub, error: clubError } = await supabase
         .from('clubs')
-        .insert({ name: form.name, slug, plan, max_students: 20 })
+        .insert({
+          name:            form.name,
+          slug,
+          plan,
+          max_students:    20,
+          whatsapp_number: form.whatsapp_number || null
+        })
         .select()
         .single()
 
@@ -181,7 +191,19 @@ export default function CentriPage() {
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: '11px', color: textMuted }}>Piano: {club.plan}</div>
+                  <div style={{ fontSize: '11px', color: textMuted, marginBottom: club.whatsapp_number ? '4px' : '0' }}>
+                    Piano: {club.plan}
+                  </div>
+                  {club.whatsapp_number && (
+                    <div style={{ fontSize: '12px', color: '#25D366', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      📱 {club.whatsapp_number}
+                    </div>
+                  )}
+                  {!club.whatsapp_number && (
+                    <div style={{ fontSize: '11px', color: '#e85858', marginTop: '2px' }}>
+                      ⚠️ Numero WhatsApp non configurato
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                   <button onClick={() => openEdit(club)}
@@ -210,13 +232,26 @@ export default function CentriPage() {
               {editingClub ? 'Modifica centro' : 'Aggiungi centro'}
             </div>
             <div style={{ fontSize: '13px', color: textMuted, marginBottom: '20px' }}>
-              {editingClub ? editingClub.name : 'Inserisci il nome del nuovo centro'}
+              {editingClub ? editingClub.name : 'Inserisci i dati del nuovo centro'}
+            </div>
+
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Nome centro *</label>
+              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+                placeholder="Es: Padel Club Roma" style={inputStyle} />
             </div>
 
             <div style={{ marginBottom: '20px' }}>
-              <label style={labelStyle}>Nome centro *</label>
-              <input value={form.name} onChange={e => setForm({ name: e.target.value })}
-                placeholder="Es: Padel Club Roma" style={inputStyle} />
+              <label style={labelStyle}>Numero WhatsApp notifiche</label>
+              <input
+                type="tel"
+                value={form.whatsapp_number}
+                onChange={e => setForm({ ...form, whatsapp_number: e.target.value })}
+                placeholder="Es: +39 333 1234567"
+                style={inputStyle} />
+              <div style={{ fontSize: '11px', color: textMuted, marginTop: '6px' }}>
+                Riceverai un messaggio WhatsApp quando un alunno prenota una lezione in questo centro
+              </div>
             </div>
 
             {error && (
