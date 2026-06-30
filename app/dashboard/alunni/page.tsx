@@ -249,14 +249,20 @@ export default function AlunniPage() {
 }
 
   function sendInvite(student: Student) {
-    if (!student.email) {
-      alert('Questo alunno non ha un\'email salvata')
-      return
-    }
-    const link = 'https://padelapp-zeta.vercel.app/login'
-    const msg  = `Ciao ${student.first_name}! Ti aspettiamo su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${student.email}) per registrarti — verrai collegato automaticamente.`
+  if (!student.email) {
+    alert('Questo alunno non ha un\'email salvata')
+    return
+  }
+  const link = 'https://padelapp-zeta.vercel.app/login'
+  const msg  = `Ciao ${student.first_name}! Ti aspettiamo su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${student.email}) per registrarti — verrai collegato automaticamente.`
+
+  if (student.phone) {
+    const cleaned = student.phone.replace(/\s+/g, '').replace(/[^\d+]/g, '')
+    window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(msg)}`, '_blank')
+  } else {
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
   }
+}
 
   const levelLabel: Record<string, string> = {
     beginner: 'Principiante', intermediate: 'Intermedio', advanced: 'Avanzato'
