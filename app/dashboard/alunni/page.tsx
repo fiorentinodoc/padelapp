@@ -15,6 +15,7 @@ interface Student {
   group_name: string | null
   status: string
   joined_at: string
+  profile_id: string | null
   club_ids?: string[]
 }
 
@@ -57,7 +58,6 @@ export default function AlunniPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    // Carica tutti i centri dell'istruttore
     const { data: ic } = await supabase
       .from('instructor_clubs')
       .select('clubs(id, name)')
@@ -69,7 +69,6 @@ export default function AlunniPage() {
     const clubIds = clubList.map(c => c.id)
     if (clubIds.length === 0) { setStudents([]); setLoading(false); return }
 
-    // Tutti i collegamenti studente-centro per questi centri
     const { data: scLinks } = await supabase
       .from('student_clubs')
       .select('student_id, club_id')
@@ -84,7 +83,6 @@ export default function AlunniPage() {
       .in('id', studentIds)
       .order('joined_at', { ascending: false })
 
-    // Aggiungi a ogni studente la lista dei club a cui è iscritto
     const enriched: Student[] = (data ?? []).map((s: any) => ({
       ...s,
       club_ids: (scLinks ?? []).filter((l: any) => l.student_id === s.id).map((l: any) => l.club_id)
@@ -133,6 +131,10 @@ export default function AlunniPage() {
       setError('Nome e cognome sono obbligatori')
       return
     }
+    if (!form.email) {
+      setError('L\'email è obbligatoria per permettere all\'alunno di accedere all\'app')
+      return
+    }
     if (form.club_ids.length === 0) {
       setError('Seleziona almeno un centro')
       return
@@ -146,7 +148,7 @@ export default function AlunniPage() {
         .update({
           first_name: form.first_name,
           last_name:  form.last_name,
-          email:      form.email || null,
+          email:      form.email,
           phone:      form.phone || null,
           level:      form.level,
           group_name: form.group_name || null,
@@ -155,7 +157,6 @@ export default function AlunniPage() {
 
       if (updateError) { setError('Errore: ' + updateError.message); setSaving(false); return }
 
-      // Aggiorna i collegamenti centro: rimuovi quelli deselezionati, aggiungi i nuovi
       const currentIds = editingStudent.club_ids ?? []
       const toRemove = currentIds.filter(id => !form.club_ids.includes(id))
       const toAdd    = form.club_ids.filter(id => !currentIds.includes(id))
@@ -172,7 +173,19 @@ export default function AlunniPage() {
         )
       }
     } else {
-      // Verifica limite piano sul primo centro selezionato
+      // Controlla che l'email non sia già usata da un altro alunno
+      const { data: existingByEmail } = await supabase
+        .from('students')
+        .select('id')
+        .eq('email', form.email)
+        .maybeSingle()
+
+      if (existingByEmail) {
+        setError('Esiste già un alunno con questa email')
+        setSaving(false)
+        return
+      }
+
       const { data: clubData } = await supabase
         .from('clubs')
         .select('plan')
@@ -198,7 +211,7 @@ export default function AlunniPage() {
           club_id:    form.club_ids[0],
           first_name: form.first_name,
           last_name:  form.last_name,
-          email:      form.email || null,
+          email:      form.email,
           phone:      form.phone || null,
           level:      form.level,
           group_name: form.group_name || null,
@@ -225,6 +238,16 @@ export default function AlunniPage() {
     const newStatus = student.status === 'active' ? 'paused' : 'active'
     await supabase.from('students').update({ status: newStatus }).eq('id', student.id)
     await loadData()
+  }
+
+  function sendInvite(student: Student) {
+    if (!student.email) {
+      alert('Questo alunno non ha un\'email salvata')
+      return
+    }
+    const link = 'https://padelapp-zeta.vercel.app/login'
+    const msg  = `Ciao ${student.first_name}! Ti aspettiamo su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${student.email}) per registrarti — verrai collegato automaticamente.`
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
   }
 
   const levelLabel: Record<string, string> = {
@@ -275,7 +298,6 @@ export default function AlunniPage() {
         </button>
       </div>
 
-      {/* Filtri status */}
       <div style={{ display: 'flex', gap: '4px', background: surface2, padding: '4px', borderRadius: '10px', width: 'fit-content', marginBottom: '14px' }}>
         {[
           { value: 'all',    label: 'Tutti' },
@@ -289,7 +311,6 @@ export default function AlunniPage() {
         ))}
       </div>
 
-      {/* Filtro centro */}
       {clubs.length > 1 && (
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
           <div onClick={() => setClubFilter('all')}
@@ -305,7 +326,6 @@ export default function AlunniPage() {
         </div>
       )}
 
-      {/* Lista */}
       {filtered.length === 0 ? (
         <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: '16px', padding: '60px 20px', textAlign: 'center' }}>
           <div style={{ fontSize: '40px', marginBottom: '16px' }}>👥</div>
@@ -319,9 +339,20 @@ export default function AlunniPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {filtered.map(student => (
             <div key={student.id} style={{ background: surface, border: `1px solid ${border}`, borderRadius: '14px', padding: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: '700', fontSize: '15px', marginBottom: '4px', color: text }}>{student.first_name} {student.last_name}</div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <div style={{ fontWeight: '700', fontSize: '15px', color: text }}>{student.first_name} {student.last_name}</div>
+                    {student.profile_id ? (
+                      <span style={{ background: 'rgba(56,201,122,0.12)', color: '#38c97a', padding: '2px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: '700' }}>
+                        ✓ App attiva
+                      </span>
+                    ) : (
+                      <span style={{ background: 'rgba(245,166,35,0.12)', color: '#f5a623', padding: '2px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: '700' }}>
+                        Non registrato
+                      </span>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
                     <span style={{ background: `${levelColor[student.level]}18`, color: levelColor[student.level], border: `1px solid ${levelColor[student.level]}40`, padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700' }}>
                       {levelLabel[student.level]}
@@ -336,7 +367,6 @@ export default function AlunniPage() {
                     </span>
                   </div>
 
-                  {/* Badge centri */}
                   {clubs.length > 1 && (student.club_ids?.length ?? 0) > 0 && (
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
                       {student.club_ids!.map(cid => (
@@ -355,6 +385,12 @@ export default function AlunniPage() {
                   )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '6px', flexShrink: 0 }}>
+                  {!student.profile_id && (
+                    <button onClick={() => sendInvite(student)}
+                      style={{ background: '#25D366', border: 'none', color: '#fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                      📱 Manda invito
+                    </button>
+                  )}
                   <button onClick={() => openEdit(student)}
                     style={{ background: 'rgba(91,127,255,0.1)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>
                     ✏️ Modifica
@@ -382,7 +418,6 @@ export default function AlunniPage() {
               {editingStudent ? `${editingStudent.first_name} ${editingStudent.last_name}` : 'Inserisci i dati del nuovo alunno'}
             </div>
 
-            {/* Selezione centri — solo se più di 1 centro */}
             {clubs.length > 1 && (
               <div style={{ marginBottom: '16px' }}>
                 <label style={labelStyle}>Centro/i *</label>
@@ -416,16 +451,17 @@ export default function AlunniPage() {
               ))}
             </div>
 
-            {[
-              { label: 'Email', key: 'email', placeholder: 'marco@email.it', type: 'email' },
-              { label: 'Telefono', key: 'phone', placeholder: '+39 333 1234567', type: 'tel' },
-            ].map(f => (
-              <div key={f.key} style={{ marginBottom: '14px' }}>
-                <label style={labelStyle}>{f.label}</label>
-                <input type={f.type} value={(form as any)[f.key]} onChange={e => setForm({ ...form, [f.key]: e.target.value })}
-                  placeholder={f.placeholder} style={inputStyle} />
-              </div>
-            ))}
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Email * <span style={{ color: textMuted, fontWeight: '400', textTransform: 'none' }}>(serve per l'accesso all'app)</span></label>
+              <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
+                placeholder="marco@email.it" style={inputStyle} />
+            </div>
+
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Telefono</label>
+              <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
+                placeholder="+39 333 1234567" style={inputStyle} />
+            </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
               <div>
@@ -443,6 +479,12 @@ export default function AlunniPage() {
                   placeholder="Es: Gruppo B" style={inputStyle} />
               </div>
             </div>
+
+            {!editingStudent && (
+              <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: textSub, marginBottom: '16px', lineHeight: '1.5' }}>
+                💡 Dopo averlo aggiunto potrai mandargli l'invito via WhatsApp con il bottone "📱 Manda invito" — si registrerà con questa email e verrà collegato automaticamente.
+              </div>
+            )}
 
             {error && (
               <div style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.3)', borderRadius: '8px', padding: '10px 12px', color: '#e85858', fontSize: '13px', marginBottom: '16px' }}>{error}</div>
