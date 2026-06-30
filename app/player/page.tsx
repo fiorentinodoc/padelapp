@@ -35,7 +35,6 @@ export default function AppHome() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    // Profilo
     const { data: prof } = await supabase
       .from('profiles')
       .select('first_name, last_name, club_id')
@@ -43,7 +42,6 @@ export default function AppHome() {
       .single()
     setProfile(prof)
 
-    // Student record
     const { data: student } = await supabase
       .from('students')
       .select('id, level, club_id')
@@ -51,41 +49,87 @@ export default function AppHome() {
       .single()
 
     if (student) {
-      // Prossima lezione prenotata
-    const now = new Date().toISOString()
-const { data: bookings } = await supabase
-  .from('bookings')
-  .select('*, lessons(*)')
-  .eq('student_id', student.id)
-  .eq('status', 'confirmed')
-  .order('created_at', { ascending: false })
-  .limit(10)
+      const now = new Date().toISOString()
 
-const futureBookings = bookings?.filter(
-  (b: any) => b.lessons && b.lessons.starts_at >= now
-) ?? []
+      const { data: bookings } = await supabase
+        .from('bookings')
+        .select('*, lessons(*)')
+        .eq('student_id', student.id)
+        .eq('status', 'confirmed')
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      const futureBookings = bookings?.filter(
+        (b: any) => b.lessons && b.lessons.starts_at >= now
+      ) ?? []
+
+      // ID delle lezioni già prenotate, per escluderle dal "posto libero"
+      const bookedLessonIds = futureBookings.map((b: any) => b.lesson_id)
 
       if (futureBookings.length > 0) {
-  setNextLesson(futureBookings[0] as any)
-}
+        setNextLesson(futureBookings[0] as any)
+      } else {
+        setNextLesson(null)
+      }
 
-      // Lezione con posto libero dello stesso livello
       const { data: freeLessons } = await supabase
         .from('lesson_availability')
         .select('*')
         .eq('club_id', student.club_id)
         .eq('level', student.level)
         .gt('available_spots', 0)
-        .gte('starts_at', new Date().toISOString())
+        .gte('starts_at', now)
         .order('starts_at', { ascending: true })
-        .limit(1)
+        .limit(5)
 
-      if (freeLessons && freeLessons.length > 0) {
-        setFreeLesson(freeLessons[0] as any)
-      }
+      const filteredFree = (freeLessons ?? []).filter(
+        (l: any) => !bookedLessonIds.includes(l.id)
+      )
+
+      setFreeLesson(filteredFree.length > 0 ? (filteredFree[0] as any) : null)
     }
 
     setLoading(false)
+  }
+
+  function downloadIcs(lesson: Lesson) {
+    const start = new Date(lesson.starts_at)
+    const end   = new Date(start.getTime() + lesson.duration_min * 60000)
+
+    function formatIcsDate(d: Date): string {
+      return d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+    }
+
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Remate//Padel App//IT',
+      'BEGIN:VEVENT',
+      `UID:${lesson.id}@remate.app`,
+      `DTSTAMP:${formatIcsDate(new Date())}`,
+      `DTSTART:${formatIcsDate(start)}`,
+      `DTEND:${formatIcsDate(end)}`,
+      `SUMMARY:${lesson.title} - Padel`,
+      `LOCATION:${lesson.court}`,
+      `DESCRIPTION:Lezione di padel su Remate`,
+      'BEGIN:VALARM',
+      'TRIGGER:-PT30M',
+      'ACTION:DISPLAY',
+      'DESCRIPTION:Promemoria lezione di padel',
+      'END:VALARM',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n')
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `lezione-padel-${lesson.id}.ics`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   const levelLabel: Record<string, string> = {
@@ -112,7 +156,7 @@ const futureBookings = bookings?.filter(
       {/* Notifica posto libero */}
       {freeLesson && (
         <div
-          onClick={() => router.push(`/player/lezioni`)}
+          onClick={() => router.push('/player/lezioni')}
           style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.25)', borderRadius: '14px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
           <div style={{ fontSize: '22px' }}>🔔</div>
           <div style={{ flex: 1 }}>
@@ -143,7 +187,7 @@ const futureBookings = bookings?.filter(
             <span>🕐 {new Date(nextLesson.lessons.starts_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</span>
             <span>📍 {nextLesson.lessons.court}</span>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
             <div style={{ flex: 1, background: 'rgba(62,230,160,0.15)', border: '1px solid rgba(62,230,160,0.3)', borderRadius: '10px', padding: '10px', textAlign: 'center', fontSize: '13px', fontWeight: '700', color: '#3ee6a0' }}>
               ✓ Confermata
             </div>
@@ -157,6 +201,11 @@ const futureBookings = bookings?.filter(
               Cancella
             </button>
           </div>
+          <button
+            onClick={() => downloadIcs(nextLesson.lessons)}
+            style={{ width: '100%', background: 'rgba(91,127,255,0.12)', border: '1px solid rgba(91,127,255,0.25)', borderRadius: '10px', padding: '10px', textAlign: 'center', fontSize: '13px', color: '#5b7fff', cursor: 'pointer', fontWeight: '600' }}>
+            📲 Aggiungi al calendario del telefono
+          </button>
         </div>
       ) : (
         <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '32px 20px', textAlign: 'center', marginBottom: '24px' }}>
@@ -179,7 +228,7 @@ const futureBookings = bookings?.filter(
           { icon: '📅', label: 'Prenota lezione',  path: '/player/lezioni',      color: '#c8f53a', text: '#0e1117' },
           { icon: '🎾', label: 'Le mie lezioni',   path: '/player/mie-lezioni',  color: '#1e2535', text: '#fff' },
         ].map(item => (
-          <div key={item.path} onClick={() => (item.path)}
+          <div key={item.path} onClick={() => router.push(item.path)}
             style={{ background: item.color, borderRadius: '14px', padding: '18px 16px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ fontSize: '24px', marginBottom: '8px' }}>{item.icon}</div>
             <div style={{ fontSize: '14px', fontWeight: '700', color: item.text }}>{item.label}</div>
