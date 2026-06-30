@@ -89,29 +89,44 @@ export default function LezioniPage() {
   }
 
   async function loadBookings(lessonId: string, clubId: string) {
-    const { data: booked } = await supabase
-      .from('bookings')
-      .select('id, student_id, status, students(first_name, last_name, level)')
-      .eq('lesson_id', lessonId)
-      .eq('status', 'confirmed')
+  const { data: booked } = await supabase
+    .from('bookings')
+    .select('id, student_id, status, students(first_name, last_name, level)')
+    .eq('lesson_id', lessonId)
+    .eq('status', 'confirmed')
 
-    setBookings(booked ?? [])
+  setBookings(booked ?? [])
 
-    const bookedIds = (booked ?? []).map((b: any) => b.student_id)
+  const bookedIds = (booked ?? []).map((b: any) => b.student_id)
 
-    let query = supabase
-      .from('students')
-      .select('id, first_name, last_name, level')
-      .eq('club_id', clubId)
-      .eq('status', 'active')
+  // Trova alunni collegati a QUESTO centro tramite student_clubs
+  const { data: scLinks } = await supabase
+    .from('student_clubs')
+    .select('student_id')
+    .eq('club_id', clubId)
 
-    if (bookedIds.length > 0) {
-      query = query.not('id', 'in', `(${bookedIds.join(',')})`)
-    }
+  const studentIdsInClub = (scLinks ?? []).map((s: any) => s.student_id)
 
-    const { data: available } = await query
-    setAvailableStudents(available ?? [])
+  if (studentIdsInClub.length === 0) {
+    setAvailableStudents([])
     setSelectedStudentId('')
+    return
+  }
+
+  let query = supabase
+    .from('students')
+    .select('id, first_name, last_name, level')
+    .in('id', studentIdsInClub)
+    .eq('status', 'active')
+
+  if (bookedIds.length > 0) {
+    query = query.not('id', 'in', `(${bookedIds.join(',')})`)
+  }
+
+  const { data: available } = await query
+  setAvailableStudents(available ?? [])
+  setSelectedStudentId('')
+
   }
 
   async function handleAddBooking() {
