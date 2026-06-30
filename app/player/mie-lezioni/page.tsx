@@ -42,17 +42,17 @@ export default function MieLezioniPage() {
     if (!studentData) { setLoading(false); return }
     setStudent(studentData)
 
+    // Niente ordinamento su colonna relazionata: si ordina lato client
     const { data: bookings } = await supabase
       .from('bookings')
       .select('*, lessons(*)')
       .eq('student_id', studentData.id)
-      .order('lessons.starts_at', { ascending: false })
 
     const now = new Date()
     const up: Booking[] = []
     const pa: Booking[] = []
 
-    bookings?.forEach((b: any) => {
+    ;(bookings ?? []).forEach((b: any) => {
       if (!b.lessons) return
       if (new Date(b.lessons.starts_at) >= now && b.status === 'confirmed') {
         up.push(b)
@@ -60,6 +60,9 @@ export default function MieLezioniPage() {
         pa.push(b)
       }
     })
+
+    up.sort((a, b) => new Date(a.lessons.starts_at).getTime() - new Date(b.lessons.starts_at).getTime())
+    pa.sort((a, b) => new Date(b.lessons.starts_at).getTime() - new Date(a.lessons.starts_at).getTime())
 
     setUpcoming(up)
     setPast(pa)
@@ -142,7 +145,7 @@ export default function MieLezioniPage() {
         <div style={{ background: '#161b27', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '40px 20px', textAlign: 'center', marginBottom: '24px' }}>
           <div style={{ fontSize: '32px', marginBottom: '12px' }}>📅</div>
           <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '6px' }}>Nessuna lezione prenotata</div>
-          <button onClick={() => router.push('/app/lezioni')}
+          <button onClick={() => router.push('/player/lezioni')}
             style={{ background: '#c8f53a', border: 'none', color: '#0e1117', padding: '10px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', marginTop: '12px' }}>
             Prenota ora
           </button>
