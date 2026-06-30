@@ -238,7 +238,15 @@ export default function AlunniPage() {
     const newStatus = student.status === 'active' ? 'paused' : 'active'
     await supabase.from('students').update({ status: newStatus }).eq('id', student.id)
     await loadData()
+    
   }
+  async function handleDeleteStudent(student: Student) {
+  if (!confirm(`Eliminare definitivamente ${student.first_name} ${student.last_name}?\n\nVerranno rimosse anche tutte le sue prenotazioni.`)) return
+  await supabase.from('bookings').delete().eq('student_id', student.id)
+  await supabase.from('student_clubs').delete().eq('student_id', student.id)
+  await supabase.from('students').delete().eq('id', student.id)
+  await loadData()
+}
 
   function sendInvite(student: Student) {
     if (!student.email) {
@@ -338,7 +346,7 @@ export default function AlunniPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {filtered.map(student => (
-            <div key={student.id} style={{ background: surface, border: `1px solid ${border}`, borderRadius: '14px', padding: '16px' }}>
+            <div key={student.id} style={{ background: student.status === 'paused' ? (isMobile ? surface2 : `${surface2}80`) : surface, border: `1px solid ${student.status === 'paused' ? border : border}`, borderRadius: '14px', padding: '16px', opacity: student.status === 'paused' ? 0.6 : 1 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: '200px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
@@ -395,10 +403,14 @@ export default function AlunniPage() {
                     style={{ background: 'rgba(91,127,255,0.1)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>
                     ✏️ Modifica
                   </button>
-                  <button onClick={() => toggleStatus(student)}
-                    style={{ background: surface2, border: `1px solid ${border}`, color: textSub, padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    {student.status === 'active' ? 'Pausa' : 'Riattiva'}
-                  </button>
+                 <button onClick={() => toggleStatus(student)}
+  style={{ background: student.status === 'active' ? 'rgba(245,166,35,0.1)' : 'rgba(56,201,122,0.1)', border: `1px solid ${student.status === 'active' ? 'rgba(245,166,35,0.2)' : 'rgba(56,201,122,0.2)'}`, color: student.status === 'active' ? '#f5a623' : '#38c97a', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: '600' }}>
+  {student.status === 'active' ? '⏸ Pausa' : '▶ Riattiva'}
+</button>
+<button onClick={() => handleDeleteStudent(student)}
+  style={{ background: 'rgba(232,88,88,0.08)', border: '1px solid rgba(232,88,88,0.15)', color: '#e85858', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+  🗑️ Elimina
+</button>
                 </div>
               </div>
             </div>
