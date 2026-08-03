@@ -79,11 +79,12 @@ export default function LezioniAppPage() {
 
     // Lezioni disponibili di tutti i club
     const { data: lessonsData } = await supabase
-      .from('lesson_availability')
-      .select('*')
-      .in('club_id', clubIds)
-      .gte('starts_at', new Date().toISOString())
-      .order('starts_at', { ascending: true })
+  .from('lesson_availability')
+  .select('*')
+  .in('club_id', clubIds)
+  .eq('level', studentData.level)
+  .gte('starts_at', new Date().toISOString())
+  .order('starts_at', { ascending: true })
 
     // Aggiungi nome club
     const enriched = (lessonsData ?? []).map(l => ({
@@ -179,8 +180,9 @@ export default function LezioniAppPage() {
       {/* Header */}
       <div style={{ marginBottom: '20px' }}>
         <div style={{ fontSize: '22px', fontWeight: '800' }}>Lezioni disponibili</div>
-        <div style={{ fontSize: '13px', color: '#5a5a6a', marginTop: '4px' }}>{filtered.length} lezioni in programma</div>
-      </div>
+        <div style={{ fontSize: '13px', color: '#5a5a6a', marginTop: '4px' }}>
+  {filtered.length} lezioni · livello {student?.level === 'beginner' ? '🟢 Principiante' : student?.level === 'intermediate' ? '🟡 Intermedio' : '🔴 Avanzato'}
+</div>
 
       {/* Filtro per centro */}
       {clubs.length > 1 && (
