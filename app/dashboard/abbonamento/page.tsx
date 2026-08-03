@@ -1,18 +1,37 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase'
 import { useClub, useTheme } from '../club-context'
 
 export default function AbbonamentoPage() {
   const [isMobile, setIsMobile] = useState(false)
+  const [instructorName, setInstructorName] = useState('')
   const { activeClub } = useClub()
   const { bg, surface, surface2, border, text, textSub, textMuted, pc } = useTheme()
+  const supabase = createClient()
 
   useEffect(() => {
     function checkMobile() { setIsMobile(window.innerWidth < 768) }
     checkMobile()
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  useEffect(() => {
+    async function loadInstructor() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('first_name, last_name')
+        .eq('id', user.id)
+        .single()
+      if (profile) {
+        setInstructorName([profile.first_name, profile.last_name].filter(Boolean).join(' '))
+      }
+    }
+    loadInstructor()
   }, [])
 
   const plans = [
@@ -72,7 +91,8 @@ export default function AbbonamentoPage() {
   ]
 
   function handleUpgrade(planName: string) {
-    const message = `Ciao! Vorrei passare al piano ${planName} per il club ${activeClub?.name}. Come posso procedere?`
+    const name    = instructorName || 'un istruttore'
+    const message = `Ciao! Sono ${name} e vorrei passare al piano ${planName}. Come posso procedere?`
     window.open(`https://wa.me/393395889666?text=${encodeURIComponent(message)}`, '_blank')
   }
 
@@ -86,7 +106,6 @@ export default function AbbonamentoPage() {
         </div>
       </div>
 
-      {/* Piani */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
         {plans.map(plan => (
           <div key={plan.name} style={{
@@ -137,11 +156,10 @@ export default function AbbonamentoPage() {
         ))}
       </div>
 
-      {/* Info upgrade */}
       <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: '16px', padding: '24px' }}>
         <div style={{ fontSize: '15px', fontWeight: '700', marginBottom: '12px', color: text }}>💬 Come fare l'upgrade</div>
         <div style={{ fontSize: '13px', color: textSub, lineHeight: '1.7', marginBottom: '16px' }}>
-          Per passare a un piano superiore clicca il bottone del piano desiderato — si aprirà WhatsApp con un messaggio pre-compilato. Ti risponderemo entro poche ore per attivare il tuo nuovo piano.
+          Per passare a un piano superiore clicca il bottone del piano desiderato — si aprirà WhatsApp con un messaggio pre-compilato con il tuo nome. Ti risponderemo entro poche ore per attivare il tuo nuovo piano.
         </div>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           {['✓ Attivazione entro 24h', '✓ Nessun contratto', '✓ Disdetta in qualsiasi momento'].map(item => (
@@ -151,7 +169,6 @@ export default function AbbonamentoPage() {
           ))}
         </div>
       </div>
-
     </div>
   )
 }

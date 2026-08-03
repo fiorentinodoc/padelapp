@@ -17,6 +17,7 @@ interface Club {
 }
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
+  const [userName, setUserName] = useState('')
   const [userEmail, setUserEmail] = useState('')
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -43,11 +44,15 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, first_name, last_name')
         .eq('id', user.id)
         .single()
 
-      if (profile?.role === 'super_admin') setIsSuperAdmin(true)
+      if (profile) {
+        const name = [profile.first_name, profile.last_name].filter(Boolean).join(' ')
+        if (name) setUserName(name)
+        if (profile.role === 'super_admin') setIsSuperAdmin(true)
+      }
     }
     load()
   }, [])
@@ -68,7 +73,6 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     setMenuOpen(false)
   }
 
-  // Calcola giorni alla scadenza
   function daysToExpiry(): number | null {
     if (!activeClub?.plan_expires_at || activeClub.plan === 'free') return null
     return Math.ceil((new Date(activeClub.plan_expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
@@ -99,13 +103,20 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const SidebarInner = () => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: surface }}>
 
-      {/* Logo */}
-      <div style={{ padding: '24px 20px 16px', borderBottom: `1px solid ${border}` }}>
+      {/* Logo / Nome istruttore */}
+      <div style={{ padding: '20px 20px 14px', borderBottom: `1px solid ${border}` }}>
         {activeClub?.logo_url ? (
           <img src={activeClub.logo_url} alt="Logo" style={{ maxHeight: '36px', maxWidth: '140px', objectFit: 'contain' }} />
         ) : (
-          <div style={{ fontSize: '20px', fontWeight: '800', color: pc }}>
-            {activeClub?.name ?? 'remate'}●
+          <div>
+            <div style={{ fontSize: '18px', fontWeight: '800', color: pc, lineHeight: 1.1 }}>
+              {userName || 'remate'}●
+            </div>
+            {activeClub?.name && (
+              <div style={{ fontSize: '11px', color: textMuted, marginTop: '3px' }}>
+                {activeClub.name}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -131,7 +142,6 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
           {clubs.length > 1 && <div style={{ fontSize: '12px', color: textMuted }}>⌄</div>}
         </div>
 
-        {/* Dropdown centri */}
         {clubMenuOpen && clubs.length > 1 && (
           <div style={{ position: 'absolute', top: '100%', left: '16px', right: '16px', background: surface2, border: `1px solid ${border}`, borderRadius: '10px', zIndex: 100, overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
             {clubs.map(club => (
@@ -155,7 +165,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
         )}
       </div>
 
-      {/* Banner scadenza piano */}
+      {/* Banner scadenza */}
       {isExpired && (
         <div style={{ margin: '10px 12px', background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.3)', borderRadius: '8px', padding: '10px 12px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: '#e85858', marginBottom: '4px' }}>⚠️ Piano scaduto</div>
@@ -178,7 +188,6 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Banner upgrade free */}
       {activeClub?.plan === 'free' && !isSuperAdmin && !isExpired && (
         <div style={{ margin: '10px 12px', background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.2)', borderRadius: '8px', padding: '10px 12px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: '#5b7fff', marginBottom: '4px' }}>Piano Free</div>
@@ -217,10 +226,17 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       <div style={{ padding: '16px', borderTop: `1px solid ${border}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', borderRadius: '8px' }}>
           <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `linear-gradient(135deg, #3a7fd4, ${pc})`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '700', color: '#fff', flexShrink: 0 }}>
-            {userEmail.charAt(0).toUpperCase()}
+            {(userName || userEmail).charAt(0).toUpperCase()}
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
-            <div style={{ fontSize: '12px', color: text, fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userEmail}</div>
+            <div style={{ fontSize: '12px', color: text, fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {userName || userEmail}
+            </div>
+            {userName && (
+              <div style={{ fontSize: '11px', color: textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {userEmail}
+              </div>
+            )}
             <div onClick={handleLogout} style={{ fontSize: '11px', color: textMuted, cursor: 'pointer', marginTop: '2px' }}>Esci →</div>
           </div>
         </div>
@@ -242,11 +258,15 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
           {activeClub?.logo_url ? (
             <img src={activeClub.logo_url} alt="Logo" style={{ maxHeight: '28px', maxWidth: '100px', objectFit: 'contain' }} />
           ) : (
-            <div style={{ fontSize: '18px', fontWeight: '800', color: pc }}>
-              {activeClub?.name ?? 'remate'}●
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: '800', color: pc, lineHeight: 1 }}>
+                {userName || 'remate'}●
+              </div>
+              {activeClub?.name && (
+                <div style={{ fontSize: '10px', color: textMuted }}>{activeClub.name}</div>
+              )}
             </div>
           )}
-          <div style={{ fontSize: '13px', color: textSub, flex: 1, textAlign: 'center' }}>{activeClub?.name}</div>
           <button onClick={() => setMenuOpen(!menuOpen)} style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', border: 'none', color: text, width: '38px', height: '38px', borderRadius: '8px', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {menuOpen ? '✕' : '☰'}
           </button>
@@ -265,7 +285,6 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       <div style={{ marginLeft: isMobile ? 0 : '220px', marginTop: isMobile ? '56px' : 0, flex: 1, minHeight: isMobile ? 'calc(100vh - 56px)' : '100vh', width: isMobile ? '100%' : 'calc(100% - 220px)' }}>
         {children}
       </div>
-
     </div>
   )
 }
