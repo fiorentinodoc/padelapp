@@ -20,6 +20,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const [userName, setUserName] = useState('')
   const [userEmail, setUserEmail] = useState('')
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [planBlocked, setPlanBlocked] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [clubMenuOpen, setClubMenuOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -56,6 +57,15 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     }
     load()
   }, [])
+
+  // Blocca accesso se piano scaduto
+  useEffect(() => {
+    if (!activeClub || isSuperAdmin) { setPlanBlocked(false); return }
+    if (activeClub.plan === 'free') { setPlanBlocked(false); return }
+    if (!activeClub.plan_expires_at) { setPlanBlocked(false); return }
+    const expired = new Date(activeClub.plan_expires_at) < new Date()
+    setPlanBlocked(expired)
+  }, [activeClub, isSuperAdmin])
 
   function switchClub(club: Club) {
     setActiveClub(club)
@@ -99,6 +109,36 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     starter: '#5b7fff',
     pro:     pc
   }
+
+  // Schermata blocco piano scaduto
+  if (planBlocked) return (
+    <div style={{ minHeight: '100vh', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', padding: '20px' }}>
+      <div style={{ background: surface, border: '1px solid rgba(232,88,88,0.3)', borderRadius: '20px', padding: '40px', width: '100%', maxWidth: '460px', textAlign: 'center' }}>
+        <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔒</div>
+        <div style={{ fontSize: '22px', fontWeight: '800', color: '#e85858', marginBottom: '8px' }}>Piano scaduto</div>
+        <div style={{ fontSize: '14px', color: textSub, marginBottom: '8px', lineHeight: '1.6' }}>
+          Il tuo piano <strong style={{ color: text }}>{activeClub?.plan}</strong> è scaduto.<br />
+          Rinnova per continuare ad usare Remate.
+        </div>
+        <div style={{ fontSize: '13px', color: textMuted, marginBottom: '28px' }}>
+          I tuoi dati sono al sicuro e verranno ripristinati al rinnovo.
+        </div>
+        <button
+          onClick={() => {
+            const name    = userName || 'un istruttore'
+            const message = `Ciao! Sono ${name} e vorrei rinnovare il piano ${activeClub?.plan}. Come posso procedere?`
+            window.open(`https://wa.me/393395889666?text=${encodeURIComponent(message)}`, '_blank')
+          }}
+          style={{ width: '100%', background: '#25D366', border: 'none', color: '#fff', padding: '14px', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', marginBottom: '12px' }}>
+          📱 Rinnova via WhatsApp
+        </button>
+        <button onClick={handleLogout}
+          style={{ width: '100%', background: 'transparent', border: `1px solid ${border}`, color: textMuted, padding: '12px', borderRadius: '12px', fontSize: '14px', cursor: 'pointer' }}>
+          Esci
+        </button>
+      </div>
+    </div>
+  )
 
   const SidebarInner = () => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: surface }}>
