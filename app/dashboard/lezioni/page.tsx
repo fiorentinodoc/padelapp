@@ -24,10 +24,8 @@ interface ClubLocal {
   plan: string
 }
 
-// Colori centri (bordo sinistro)
 const CLUB_COLORS = ['#c8f53a', '#5b7fff', '#e85858', '#a78bfa', '#06b6d4']
 
-// Colori livelli (sfondo)
 const LEVEL_BG: Record<string, string> = {
   beginner:     '#38c97a',
   intermediate: '#f5a623',
@@ -44,6 +42,7 @@ export default function LezioniPage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [clubs, setClubs] = useState<ClubLocal[]>([])
   const [filterClubId, setFilterClubId] = useState<string>('all')
+  const [filterLevel, setFilterLevel] = useState<string>('all')
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -167,7 +166,7 @@ export default function LezioniPage() {
     setBookings([])
     setAvailableStudents([])
     setForm({
-      title: '', level: 'intermediate', court: '',
+      title: '', level: filterLevel !== 'all' ? filterLevel : 'intermediate', court: '',
       date, time, duration_min: '90',
       max_spots: '4', recurrence: 'none',
       club_id: filterClubId !== 'all' ? filterClubId : (activeClub?.id ?? clubs[0]?.id ?? '')
@@ -274,7 +273,6 @@ export default function LezioniPage() {
   const monthDays = getMonthDays(currentDate)
   const hours     = Array.from({ length: 14 }, (_, i) => i + 7)
 
-  // Mappa colore centro (bordo sinistro)
   const clubColorMap: Record<string, string> = {}
   clubs.forEach((c, i) => { clubColorMap[c.id] = CLUB_COLORS[i % CLUB_COLORS.length] })
 
@@ -284,13 +282,13 @@ export default function LezioniPage() {
   function lessonsForDay(date: Date): Lesson[] {
     const dateStr = date.toISOString().split('T')[0]
     return lessons.filter(l => {
-      const matchDate = l.starts_at.split('T')[0] === dateStr
-      const matchClub = filterClubId === 'all' || l.club_id === filterClubId
-      return matchDate && matchClub
+      const matchDate  = l.starts_at.split('T')[0] === dateStr
+      const matchClub  = filterClubId === 'all' || l.club_id === filterClubId
+      const matchLevel = filterLevel === 'all' || l.level === filterLevel
+      return matchDate && matchClub && matchLevel
     })
   }
 
-  // Card lezione nel calendario — doppio sistema visivo
   function lessonCard(lesson: Lesson, compact = false) {
     const levelBg   = LEVEL_BG[lesson.level] ?? '#5b7fff'
     const clubColor = clubColorMap[lesson.club_id] ?? pc
@@ -390,39 +388,51 @@ export default function LezioniPage() {
           </div>
         </div>
 
-        {/* Legenda livelli + centri */}
+        {/* Legenda + filtri livelli e centri */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* Livelli */}
+
+          {/* Filtri livello cliccabili */}
           {[
             { level: 'beginner',     label: 'Principiante' },
             { level: 'intermediate', label: 'Intermedio' },
             { level: 'advanced',     label: 'Avanzato' },
           ].map(({ level, label }) => (
-            <div key={level} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: surface2, padding: '3px 10px', borderRadius: '20px', fontSize: '11px', border: `1px solid ${border}` }}>
+            <div key={level}
+              onClick={() => setFilterLevel(filterLevel === level ? 'all' : level)}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', background: filterLevel === level ? `${LEVEL_BG[level]}25` : surface2, padding: '4px 12px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${filterLevel === level ? LEVEL_BG[level] : border}`, cursor: 'pointer' }}>
               <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: LEVEL_BG[level], flexShrink: 0 }} />
-              <span style={{ color: text, fontWeight: '500' }}>{label}</span>
+              <span style={{ color: filterLevel === level ? LEVEL_BG[level] : text, fontWeight: filterLevel === level ? '700' : '400' }}>{label}</span>
             </div>
           ))}
+
+          {/* Reset filtro livello */}
+          {filterLevel !== 'all' && (
+            <div onClick={() => setFilterLevel('all')}
+              style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '11px', border: `1px solid ${border}`, cursor: 'pointer', background: surface2, color: textMuted }}>
+              × tutti livelli
+            </div>
+          )}
 
           {/* Separatore */}
           {clubs.length > 1 && (
-            <div style={{ width: '1px', height: '20px', background: border }} />
+            <div style={{ width: '1px', height: '20px', background: border, margin: '0 2px' }} />
           )}
 
-          {/* Centri */}
+          {/* Filtri centri cliccabili */}
           {clubs.length > 1 && clubs.map((club, i) => (
-            <div key={club.id} onClick={() => setFilterClubId(filterClubId === club.id ? 'all' : club.id)}
-              style={{ display: 'flex', alignItems: 'center', gap: '5px', background: filterClubId === club.id ? `${CLUB_COLORS[i % CLUB_COLORS.length]}18` : surface2, padding: '3px 10px', borderRadius: '20px', fontSize: '11px', border: `1px solid ${filterClubId === club.id ? CLUB_COLORS[i % CLUB_COLORS.length] : border}`, cursor: 'pointer' }}>
+            <div key={club.id}
+              onClick={() => setFilterClubId(filterClubId === club.id ? 'all' : club.id)}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', background: filterClubId === club.id ? `${CLUB_COLORS[i % CLUB_COLORS.length]}18` : surface2, padding: '4px 12px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${filterClubId === club.id ? CLUB_COLORS[i % CLUB_COLORS.length] : border}`, cursor: 'pointer' }}>
               <div style={{ width: '4px', height: '14px', borderRadius: '2px', background: CLUB_COLORS[i % CLUB_COLORS.length], flexShrink: 0 }} />
-              <span style={{ color: text, fontWeight: filterClubId === club.id ? '700' : '400' }}>{club.name}</span>
+              <span style={{ color: filterClubId === club.id ? CLUB_COLORS[i % CLUB_COLORS.length] : text, fontWeight: filterClubId === club.id ? '700' : '400' }}>{club.name}</span>
             </div>
           ))}
 
-          {/* Filtro tutti */}
+          {/* Reset filtro centro */}
           {clubs.length > 1 && filterClubId !== 'all' && (
             <div onClick={() => setFilterClubId('all')}
-              style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', border: `1px solid ${border}`, cursor: 'pointer', background: surface2, color: textMuted }}>
-              × Tutti
+              style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '11px', border: `1px solid ${border}`, cursor: 'pointer', background: surface2, color: textMuted }}>
+              × tutti centri
             </div>
           )}
         </div>
@@ -547,7 +557,6 @@ export default function LezioniPage() {
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}>
           <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: isMobile ? '20px 20px 0 0' : '20px', padding: '24px', width: '100%', maxWidth: isMobile ? '100%' : '520px', maxHeight: '90vh', overflowY: 'auto' }}>
 
-            {/* Badge livello nel modal */}
             {editingLesson && (
               <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 <span style={{ background: LEVEL_BG[editingLesson.level] ?? '#5b7fff', color: '#fff', fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '6px' }}>
@@ -633,7 +642,6 @@ export default function LezioniPage() {
               </div>
             )}
 
-            {/* Sezione prenotazioni */}
             {editingLesson && (
               <div style={{ marginBottom: '20px', borderTop: `1px solid ${border}`, paddingTop: '16px', marginTop: '4px' }}>
                 <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '10px', color: text }}>
@@ -667,9 +675,7 @@ export default function LezioniPage() {
 
                 {bookings.length < parseInt(form.max_spots) && availableStudents.length > 0 && (
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <select
-                      value={selectedStudentId}
-                      onChange={e => setSelectedStudentId(e.target.value)}
+                    <select value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)}
                       style={{ flex: 1, padding: '8px 10px', background: surface2, border: `1px solid ${border}`, borderRadius: '8px', color: text, fontSize: '13px', outline: 'none' }}>
                       <option value="">Seleziona alunno...</option>
                       {availableStudents.map((s: any) => (
