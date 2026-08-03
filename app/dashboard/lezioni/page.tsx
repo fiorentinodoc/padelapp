@@ -24,7 +24,21 @@ interface ClubLocal {
   plan: string
 }
 
-const LEVEL_COLORS = ['#c8f53a', '#5b7fff', '#38c97a', '#f5a623', '#e85858']
+// Colori centri (bordo sinistro)
+const CLUB_COLORS = ['#c8f53a', '#5b7fff', '#e85858', '#a78bfa', '#06b6d4']
+
+// Colori livelli (sfondo)
+const LEVEL_BG: Record<string, string> = {
+  beginner:     '#38c97a',
+  intermediate: '#f5a623',
+  advanced:     '#e85858'
+}
+const LEVEL_LABEL: Record<string, string> = {
+  beginner: 'Princ.', intermediate: 'Interm.', advanced: 'Avanz.'
+}
+const LEVEL_LABEL_FULL: Record<string, string> = {
+  beginner: 'Principiante', intermediate: 'Intermedio', advanced: 'Avanzato'
+}
 
 export default function LezioniPage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
@@ -89,57 +103,53 @@ export default function LezioniPage() {
   }
 
   async function loadBookings(lessonId: string, clubId: string) {
-  const { data: booked } = await supabase
-    .from('bookings')
-    .select('id, student_id, status, students(first_name, last_name, level)')
-    .eq('lesson_id', lessonId)
-    .eq('status', 'confirmed')
+    const { data: booked } = await supabase
+      .from('bookings')
+      .select('id, student_id, status, students(first_name, last_name, level)')
+      .eq('lesson_id', lessonId)
+      .eq('status', 'confirmed')
 
-  setBookings(booked ?? [])
+    setBookings(booked ?? [])
 
-  const bookedIds = (booked ?? []).map((b: any) => b.student_id)
+    const bookedIds = (booked ?? []).map((b: any) => b.student_id)
 
-  // Trova alunni collegati a QUESTO centro tramite student_clubs
-  const { data: scLinks } = await supabase
-    .from('student_clubs')
-    .select('student_id')
-    .eq('club_id', clubId)
+    const { data: scLinks } = await supabase
+      .from('student_clubs')
+      .select('student_id')
+      .eq('club_id', clubId)
 
-  const studentIdsInClub = (scLinks ?? []).map((s: any) => s.student_id)
+    const studentIdsInClub = (scLinks ?? []).map((s: any) => s.student_id)
 
-  if (studentIdsInClub.length === 0) {
-    setAvailableStudents([])
+    if (studentIdsInClub.length === 0) {
+      setAvailableStudents([])
+      setSelectedStudentId('')
+      return
+    }
+
+    let query = supabase
+      .from('students')
+      .select('id, first_name, last_name, level')
+      .in('id', studentIdsInClub)
+      .eq('status', 'active')
+
+    if (bookedIds.length > 0) {
+      query = query.not('id', 'in', `(${bookedIds.join(',')})`)
+    }
+
+    const { data: available } = await query
+    setAvailableStudents(available ?? [])
     setSelectedStudentId('')
-    return
-  }
-
-  let query = supabase
-    .from('students')
-    .select('id, first_name, last_name, level')
-    .in('id', studentIdsInClub)
-    .eq('status', 'active')
-
-  if (bookedIds.length > 0) {
-    query = query.not('id', 'in', `(${bookedIds.join(',')})`)
-  }
-
-  const { data: available } = await query
-  setAvailableStudents(available ?? [])
-  setSelectedStudentId('')
-
   }
 
   async function handleAddBooking() {
     if (!editingLesson || !selectedStudentId) return
     setAddingStudent(true)
-
     await supabase.from('bookings').insert({
       lesson_id:    editingLesson.id,
       student_id:   selectedStudentId,
       status:       'confirmed',
       confirmed_at: new Date().toISOString()
     })
-
     await loadBookings(editingLesson.id, editingLesson.club_id)
     setAddingStudent(false)
   }
@@ -264,8 +274,9 @@ export default function LezioniPage() {
   const monthDays = getMonthDays(currentDate)
   const hours     = Array.from({ length: 14 }, (_, i) => i + 7)
 
+  // Mappa colore centro (bordo sinistro)
   const clubColorMap: Record<string, string> = {}
-  clubs.forEach((c, i) => { clubColorMap[c.id] = LEVEL_COLORS[i % LEVEL_COLORS.length] })
+  clubs.forEach((c, i) => { clubColorMap[c.id] = CLUB_COLORS[i % CLUB_COLORS.length] })
 
   const dayLabel   = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
   const monthLabel = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre']
@@ -279,8 +290,50 @@ export default function LezioniPage() {
     })
   }
 
-  const levelLabel: Record<string, string> = {
-    beginner: 'Princ.', intermediate: 'Interm.', advanced: 'Avanz.'
+  // Card lezione nel calendario — doppio sistema visivo
+  function lessonCard(lesson: Lesson, compact = false) {
+    const levelBg   = LEVEL_BG[lesson.level] ?? '#5b7fff'
+    const clubColor = clubColorMap[lesson.club_id] ?? pc
+    const time      = new Date(lesson.starts_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+    return (
+      <div
+        key={lesson.id}
+        onClick={e => { e.stopPropagation(); openEdit(lesson) }}
+        style={{
+          background:   `${levelBg}18`,
+          borderLeft:   `4px solid ${clubColor}`,
+          borderTop:    `1px solid ${levelBg}40`,
+          borderRight:  `1px solid ${levelBg}40`,
+          borderBottom: `1px solid ${levelBg}40`,
+          borderRadius: '4px',
+          padding:      compact ? '2px 4px' : '3px 6px',
+          marginBottom: '2px',
+          cursor:       'pointer',
+          overflow:     'hidden'
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', overflow: 'hidden' }}>
+          <span style={{
+            background: levelBg, color: '#fff',
+            fontSize: '9px', fontWeight: '800',
+            padding: '1px 4px', borderRadius: '3px',
+            flexShrink: 0, letterSpacing: '0.3px'
+          }}>
+            {LEVEL_LABEL[lesson.level]}
+          </span>
+          <span style={{ fontSize: '11px', fontWeight: '700', color: text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {lesson.title}
+          </span>
+        </div>
+        {!compact && (
+          <div style={{ fontSize: '10px', color: textSub, marginTop: '1px' }}>
+            {time} · {lesson.court}
+          </div>
+        )}
+        {compact && (
+          <div style={{ fontSize: '9px', color: textSub }}>{time}</div>
+        )}
+      </div>
+    )
   }
 
   const inputStyle: React.CSSProperties = {
@@ -337,22 +390,42 @@ export default function LezioniPage() {
           </div>
         </div>
 
-        {/* Filtro centri */}
-        {clubs.length > 1 && (
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <div onClick={() => setFilterClubId('all')}
-              style={{ display: 'flex', alignItems: 'center', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${filterClubId === 'all' ? text : border}`, cursor: 'pointer', background: filterClubId === 'all' ? text : surface2 }}>
-              <span style={{ color: filterClubId === 'all' ? bg : textSub, fontWeight: filterClubId === 'all' ? '700' : '400' }}>Tutti</span>
+        {/* Legenda livelli + centri */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Livelli */}
+          {[
+            { level: 'beginner',     label: 'Principiante' },
+            { level: 'intermediate', label: 'Intermedio' },
+            { level: 'advanced',     label: 'Avanzato' },
+          ].map(({ level, label }) => (
+            <div key={level} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: surface2, padding: '3px 10px', borderRadius: '20px', fontSize: '11px', border: `1px solid ${border}` }}>
+              <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: LEVEL_BG[level], flexShrink: 0 }} />
+              <span style={{ color: text, fontWeight: '500' }}>{label}</span>
             </div>
-            {clubs.map((club, i) => (
-              <div key={club.id} onClick={() => setFilterClubId(club.id)}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', border: `1px solid ${filterClubId === club.id ? LEVEL_COLORS[i % LEVEL_COLORS.length] : border}`, cursor: 'pointer', background: filterClubId === club.id ? `${LEVEL_COLORS[i % LEVEL_COLORS.length]}20` : surface2 }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: LEVEL_COLORS[i % LEVEL_COLORS.length], flexShrink: 0 }} />
-                <span style={{ color: text, fontWeight: filterClubId === club.id ? '700' : '400' }}>{club.name}</span>
-              </div>
-            ))}
-          </div>
-        )}
+          ))}
+
+          {/* Separatore */}
+          {clubs.length > 1 && (
+            <div style={{ width: '1px', height: '20px', background: border }} />
+          )}
+
+          {/* Centri */}
+          {clubs.length > 1 && clubs.map((club, i) => (
+            <div key={club.id} onClick={() => setFilterClubId(filterClubId === club.id ? 'all' : club.id)}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', background: filterClubId === club.id ? `${CLUB_COLORS[i % CLUB_COLORS.length]}18` : surface2, padding: '3px 10px', borderRadius: '20px', fontSize: '11px', border: `1px solid ${filterClubId === club.id ? CLUB_COLORS[i % CLUB_COLORS.length] : border}`, cursor: 'pointer' }}>
+              <div style={{ width: '4px', height: '14px', borderRadius: '2px', background: CLUB_COLORS[i % CLUB_COLORS.length], flexShrink: 0 }} />
+              <span style={{ color: text, fontWeight: filterClubId === club.id ? '700' : '400' }}>{club.name}</span>
+            </div>
+          ))}
+
+          {/* Filtro tutti */}
+          {clubs.length > 1 && filterClubId !== 'all' && (
+            <div onClick={() => setFilterClubId('all')}
+              style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', border: `1px solid ${border}`, cursor: 'pointer', background: surface2, color: textMuted }}>
+              × Tutti
+            </div>
+          )}
+        </div>
       </div>
 
       {/* VISTA SETTIMANA DESKTOP */}
@@ -384,14 +457,7 @@ export default function LezioniPage() {
                   return (
                     <div key={di} onClick={() => openNew(day.toISOString().split('T')[0], `${String(hour).padStart(2,'0')}:00`)}
                       style={{ borderLeft: `1px solid ${border}`, padding: '2px', cursor: 'pointer', minHeight: '60px' }}>
-                      {dayLessons.map(lesson => (
-                        <div key={lesson.id}
-                          onClick={e => { e.stopPropagation(); openEdit(lesson) }}
-                          style={{ background: `${clubColorMap[lesson.club_id] ?? pc}20`, border: `1px solid ${clubColorMap[lesson.club_id] ?? pc}`, borderLeft: `3px solid ${clubColorMap[lesson.club_id] ?? pc}`, borderRadius: '4px', padding: '3px 6px', fontSize: '11px', marginBottom: '2px', cursor: 'pointer' }}>
-                          <div style={{ fontWeight: '700', color: clubColorMap[lesson.club_id] ?? pc, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lesson.title}</div>
-                          <div style={{ color: textSub }}>{new Date(lesson.starts_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })} · {lesson.court}</div>
-                        </div>
-                      ))}
+                      {dayLessons.map(lesson => lessonCard(lesson))}
                     </div>
                   )
                 })}
@@ -419,16 +485,25 @@ export default function LezioniPage() {
                 {dayLessons.length === 0 ? (
                   <div style={{ padding: '10px 14px', fontSize: '12px', color: textMuted }}>Nessuna lezione</div>
                 ) : (
-                  dayLessons.map(lesson => (
-                    <div key={lesson.id} onClick={() => openEdit(lesson)}
-                      style={{ padding: '10px 14px', borderTop: `1px solid ${border}`, cursor: 'pointer', borderLeft: `3px solid ${clubColorMap[lesson.club_id] ?? pc}` }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ fontWeight: '700', fontSize: '13px', color: clubColorMap[lesson.club_id] ?? pc }}>{lesson.title}</div>
-                        <div style={{ fontSize: '11px', color: textMuted }}>{new Date(lesson.starts_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</div>
+                  dayLessons.map(lesson => {
+                    const levelBg   = LEVEL_BG[lesson.level] ?? '#5b7fff'
+                    const clubColor = clubColorMap[lesson.club_id] ?? pc
+                    return (
+                      <div key={lesson.id} onClick={() => openEdit(lesson)}
+                        style={{ padding: '10px 14px', borderTop: `1px solid ${border}`, cursor: 'pointer', borderLeft: `4px solid ${clubColor}`, background: `${levelBg}10` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ background: levelBg, color: '#fff', fontSize: '9px', fontWeight: '800', padding: '1px 5px', borderRadius: '3px' }}>
+                              {LEVEL_LABEL[lesson.level]}
+                            </span>
+                            <div style={{ fontWeight: '700', fontSize: '13px', color: text }}>{lesson.title}</div>
+                          </div>
+                          <div style={{ fontSize: '11px', color: textMuted }}>{new Date(lesson.starts_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</div>
+                        </div>
+                        <div style={{ fontSize: '12px', color: textSub }}>📍 {lesson.court} · {lesson.max_spots} posti</div>
                       </div>
-                      <div style={{ fontSize: '12px', color: textSub, marginTop: '2px' }}>📍 {lesson.court} · {lesson.max_spots} posti</div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
             )
@@ -455,12 +530,7 @@ export default function LezioniPage() {
                   <div style={{ fontSize: '13px', fontWeight: isToday ? '800' : '400', color: isToday ? pc : text, marginBottom: '4px', width: '22px', height: '22px', borderRadius: '50%', background: isToday ? `${pc}20` : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {day.getDate()}
                   </div>
-                  {dayLessons.slice(0, 2).map(lesson => (
-                    <div key={lesson.id} onClick={e => { e.stopPropagation(); openEdit(lesson) }}
-                      style={{ background: `${clubColorMap[lesson.club_id] ?? pc}20`, border: `1px solid ${clubColorMap[lesson.club_id] ?? pc}40`, borderRadius: '3px', padding: '2px 4px', fontSize: '10px', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: clubColorMap[lesson.club_id] ?? pc, fontWeight: '600' }}>
-                      {new Date(lesson.starts_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })} {lesson.title}
-                    </div>
-                  ))}
+                  {dayLessons.slice(0, 2).map(lesson => lessonCard(lesson, true))}
                   {dayLessons.length > 2 && (
                     <div style={{ fontSize: '10px', color: textMuted }}>+{dayLessons.length - 2} altre</div>
                   )}
@@ -476,6 +546,20 @@ export default function LezioniPage() {
         <div onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}>
           <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: isMobile ? '20px 20px 0 0' : '20px', padding: '24px', width: '100%', maxWidth: isMobile ? '100%' : '520px', maxHeight: '90vh', overflowY: 'auto' }}>
+
+            {/* Badge livello nel modal */}
+            {editingLesson && (
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                <span style={{ background: LEVEL_BG[editingLesson.level] ?? '#5b7fff', color: '#fff', fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '6px' }}>
+                  {LEVEL_LABEL_FULL[editingLesson.level]}
+                </span>
+                {clubs.length > 1 && (
+                  <span style={{ background: `${clubColorMap[editingLesson.club_id]}20`, color: clubColorMap[editingLesson.club_id], border: `1px solid ${clubColorMap[editingLesson.club_id]}40`, fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '6px' }}>
+                    {clubs.find(c => c.id === editingLesson.club_id)?.name}
+                  </span>
+                )}
+              </div>
+            )}
 
             <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '6px', color: text }}>
               {editingLesson ? 'Modifica lezione' : 'Nuova lezione'}
@@ -527,9 +611,9 @@ export default function LezioniPage() {
               <div>
                 <label style={labelStyle}>Livello</label>
                 <select value={form.level} onChange={e => setForm({ ...form, level: e.target.value })} style={{ ...inputStyle, outline: 'none' }}>
-                  <option value="beginner">Principiante</option>
-                  <option value="intermediate">Intermedio</option>
-                  <option value="advanced">Avanzato</option>
+                  <option value="beginner">🟢 Principiante</option>
+                  <option value="intermediate">🟡 Intermedio</option>
+                  <option value="advanced">🔴 Avanzato</option>
                 </select>
               </div>
               <div>
@@ -549,19 +633,17 @@ export default function LezioniPage() {
               </div>
             )}
 
-            {/* Sezione prenotazioni — solo per lezioni esistenti */}
+            {/* Sezione prenotazioni */}
             {editingLesson && (
               <div style={{ marginBottom: '20px', borderTop: `1px solid ${border}`, paddingTop: '16px', marginTop: '4px' }}>
                 <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '10px', color: text }}>
                   👥 Alunni iscritti ({bookings.length}/{form.max_spots})
                 </div>
 
-                {/* Barra occupazione */}
                 <div style={{ height: '6px', background: surface2, borderRadius: '3px', marginBottom: '12px', overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${Math.min((bookings.length / parseInt(form.max_spots)) * 100, 100)}%`, background: bookings.length >= parseInt(form.max_spots) ? '#e85858' : '#38c97a', borderRadius: '3px' }} />
                 </div>
 
-                {/* Lista iscritti */}
                 {bookings.length === 0 ? (
                   <div style={{ fontSize: '13px', color: textMuted, marginBottom: '12px', fontStyle: 'italic' }}>Nessun alunno iscritto</div>
                 ) : (
@@ -571,9 +653,9 @@ export default function LezioniPage() {
                         <div style={{ flex: 1, fontSize: '13px', color: text, fontWeight: '600' }}>
                           {b.students?.first_name} {b.students?.last_name}
                         </div>
-                        <div style={{ fontSize: '11px', color: textMuted }}>
-                          {levelLabel[b.students?.level] ?? b.students?.level}
-                        </div>
+                        <span style={{ background: `${LEVEL_BG[b.students?.level]}20`, color: LEVEL_BG[b.students?.level], fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '4px' }}>
+                          {LEVEL_LABEL[b.students?.level]}
+                        </span>
                         <button onClick={() => handleRemoveBooking(b.id)}
                           style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.2)', color: '#e85858', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                           Rimuovi
@@ -583,7 +665,6 @@ export default function LezioniPage() {
                   </div>
                 )}
 
-                {/* Aggiungi alunno */}
                 {bookings.length < parseInt(form.max_spots) && availableStudents.length > 0 && (
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <select
@@ -593,13 +674,11 @@ export default function LezioniPage() {
                       <option value="">Seleziona alunno...</option>
                       {availableStudents.map((s: any) => (
                         <option key={s.id} value={s.id}>
-                          {s.first_name} {s.last_name} — {levelLabel[s.level] ?? s.level}
+                          {s.first_name} {s.last_name} — {LEVEL_LABEL_FULL[s.level] ?? s.level}
                         </option>
                       ))}
                     </select>
-                    <button
-                      onClick={handleAddBooking}
-                      disabled={!selectedStudentId || addingStudent}
+                    <button onClick={handleAddBooking} disabled={!selectedStudentId || addingStudent}
                       style={{ background: selectedStudentId ? pc : surface2, border: 'none', color: '#0e1117', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: selectedStudentId ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap', opacity: selectedStudentId ? 1 : 0.5 }}>
                       {addingStudent ? '...' : '+ Aggiungi'}
                     </button>
@@ -609,7 +688,6 @@ export default function LezioniPage() {
                 {bookings.length >= parseInt(form.max_spots) && (
                   <div style={{ fontSize: '12px', color: '#e85858', fontWeight: '600' }}>⚠️ Lezione al completo</div>
                 )}
-
                 {availableStudents.length === 0 && bookings.length < parseInt(form.max_spots) && (
                   <div style={{ fontSize: '12px', color: textMuted }}>Tutti gli alunni del club sono già iscritti</div>
                 )}
