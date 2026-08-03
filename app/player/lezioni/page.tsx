@@ -29,6 +29,7 @@ export default function LezioniAppPage() {
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [clubs, setClubs] = useState<Club[]>([])
   const [student, setStudent] = useState<any>(null)
+  const [isPaused, setIsPaused] = useState(false)
   const [loading, setLoading] = useState(true)
   const [booking, setBooking] = useState<string | null>(null)
   const [myBookings, setMyBookings] = useState<string[]>([])
@@ -44,12 +45,13 @@ export default function LezioniAppPage() {
 
     const { data: studentData } = await supabase
       .from('students')
-      .select('id, level, club_id')
+      .select('id, level, club_id, status')
       .eq('profile_id', user.id)
       .single()
 
     if (!studentData) { setLoading(false); return }
     setStudent(studentData)
+    setIsPaused(studentData.status === 'paused')
 
     const { data: studentClubs } = await supabase
       .from('student_clubs')
@@ -100,7 +102,7 @@ export default function LezioniAppPage() {
   }
 
   async function handleBook(lessonId: string) {
-    if (!student) return
+    if (!student || isPaused) return
     setBooking(lessonId)
 
     const { error } = await supabase.from('bookings').insert({
@@ -168,6 +170,17 @@ export default function LezioniAppPage() {
   return (
     <div style={{ padding: '24px 20px' }}>
 
+      {/* Banner pausa */}
+      {isPaused && (
+        <div style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.25)', borderRadius: '14px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ fontSize: '22px' }}>⏸</div>
+          <div>
+            <div style={{ fontSize: '13px', fontWeight: '700', color: '#f5a623', marginBottom: '2px' }}>Account in pausa</div>
+            <div style={{ fontSize: '12px', color: '#8b93a8' }}>Puoi visualizzare le lezioni ma non prenotare. Contatta il tuo istruttore.</div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ marginBottom: '20px' }}>
         <div style={{ fontSize: '22px', fontWeight: '800' }}>Lezioni disponibili</div>
@@ -200,7 +213,7 @@ export default function LezioniAppPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {filtered.map((lesson, i) => {
+          {filtered.map((lesson) => {
             const isBooked  = myBookings.includes(lesson.lesson_id)
             const isFull    = lesson.available_spots <= 0
             const isBooking = booking === lesson.lesson_id
@@ -240,7 +253,11 @@ export default function LezioniAppPage() {
                   <div style={{ height: '100%', width: `${(lesson.booked_spots / lesson.max_spots) * 100}%`, background: isFull ? '#e85858' : '#38c97a', borderRadius: '2px' }} />
                 </div>
 
-                {isBooked ? (
+                {isPaused ? (
+                  <div style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)', borderRadius: '10px', padding: '10px', textAlign: 'center', fontSize: '13px', color: '#f5a623', fontWeight: '600' }}>
+                    ⏸ Account in pausa — contatta il tuo istruttore
+                  </div>
+                ) : isBooked ? (
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1, background: 'rgba(62,230,160,0.12)', border: '1px solid rgba(62,230,160,0.25)', borderRadius: '10px', padding: '10px', textAlign: 'center', fontSize: '13px', fontWeight: '700', color: '#3ee6a0' }}>
                       ✓ Prenotata
