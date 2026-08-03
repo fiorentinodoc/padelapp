@@ -51,7 +51,6 @@ export default function LezioniAppPage() {
     if (!studentData) { setLoading(false); return }
     setStudent(studentData)
 
-    // Tutti i club a cui è iscritto il giocatore
     const { data: studentClubs } = await supabase
       .from('student_clubs')
       .select('club_id, clubs(id, name)')
@@ -62,7 +61,6 @@ export default function LezioniAppPage() {
       name: sc.clubs.name
     })) ?? []
 
-    // Se non ha student_clubs usa il club principale
     if (clubList.length === 0 && studentData.club_id) {
       const { data: clubData } = await supabase
         .from('clubs')
@@ -77,23 +75,20 @@ export default function LezioniAppPage() {
     const clubIds = clubList.map(c => c.id)
     if (clubIds.length === 0) { setLoading(false); return }
 
-    // Lezioni disponibili di tutti i club
     const { data: lessonsData } = await supabase
-  .from('lesson_availability')
-  .select('*')
-  .in('club_id', clubIds)
-  .eq('level', studentData.level)
-  .gte('starts_at', new Date().toISOString())
-  .order('starts_at', { ascending: true })
+      .from('lesson_availability')
+      .select('*')
+      .in('club_id', clubIds)
+      .eq('level', studentData.level)
+      .gte('starts_at', new Date().toISOString())
+      .order('starts_at', { ascending: true })
 
-    // Aggiungi nome club
     const enriched = (lessonsData ?? []).map(l => ({
       ...l,
       club_name: clubList.find(c => c.id === l.club_id)?.name ?? ''
     }))
     setLessons(enriched)
 
-    // Prenotazioni esistenti
     const { data: bookingsData } = await supabase
       .from('bookings')
       .select('lesson_id')
@@ -104,51 +99,47 @@ export default function LezioniAppPage() {
     setLoading(false)
   }
 
- async function handleBook(lessonId: string) {
-  if (!student) return
-  setBooking(lessonId)
+  async function handleBook(lessonId: string) {
+    if (!student) return
+    setBooking(lessonId)
 
-  const { error } = await supabase.from('bookings').insert({
-    lesson_id:    lessonId,
-    student_id:   student.id,
-    status:       'confirmed',
-    confirmed_at: new Date().toISOString()
-  })
+    const { error } = await supabase.from('bookings').insert({
+      lesson_id:    lessonId,
+      student_id:   student.id,
+      status:       'confirmed',
+      confirmed_at: new Date().toISOString()
+    })
 
-  if (error) {
-    alert('Errore: ' + error.message)
-  } else {
-    // Manda notifica WhatsApp all'istruttore
-    const lesson = lessons.find(l => l.lesson_id === lessonId)
-    if (lesson) {
-      const { data: clubData } = await supabase
-        .from('clubs')
-        .select('whatsapp_number, name')
-        .eq('id', lesson.club_id)
-        .single()
-
-      if (clubData?.whatsapp_number) {
-        const date    = new Date(lesson.starts_at)
-        const dateStr = date.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
-        const timeStr = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-
-        const { data: profData } = await supabase
-          .from('profiles')
-          .select('first_name, last_name')
-          .eq('id', (await supabase.auth.getUser()).data.user?.id)
+    if (error) {
+      alert('Errore: ' + error.message)
+    } else {
+      const lesson = lessons.find(l => l.lesson_id === lessonId)
+      if (lesson) {
+        const { data: clubData } = await supabase
+          .from('clubs')
+          .select('whatsapp_number, name')
+          .eq('id', lesson.club_id)
           .single()
 
-        const studentName = profData ? `${profData.first_name} ${profData.last_name}` : 'Un alunno'
-        const cleaned     = clubData.whatsapp_number.replace(/\s+/g, '').replace(/[^\d+]/g, '')
-        const msg         = `🎾 Nuova prenotazione!\n\n*${studentName}* ha prenotato:\n📅 ${lesson.title}\n🗓 ${dateStr} alle ${timeStr}\n📍 ${lesson.court}\n\nCentro: ${clubData.name}`
-
-        window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(msg)}`, '_blank')
+        if (clubData?.whatsapp_number) {
+          const date      = new Date(lesson.starts_at)
+          const dateStr   = date.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
+          const timeStr   = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+          const { data: profData } = await supabase
+            .from('profiles')
+            .select('first_name, last_name')
+            .eq('id', (await supabase.auth.getUser()).data.user?.id)
+            .single()
+          const studentName = profData ? `${profData.first_name} ${profData.last_name}` : 'Un alunno'
+          const cleaned     = clubData.whatsapp_number.replace(/\s+/g, '').replace(/[^\d+]/g, '')
+          const msg         = `🎾 Nuova prenotazione!\n\n*${studentName}* ha prenotato:\n📅 ${lesson.title}\n🗓 ${dateStr} alle ${timeStr}\n📍 ${lesson.court}\n\nCentro: ${clubData.name}`
+          window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(msg)}`, '_blank')
+        }
       }
+      await loadData()
     }
-    await loadData()
+    setBooking(null)
   }
-  setBooking(null)
-}
 
   async function handleCancel(lessonId: string) {
     if (!student) return
@@ -181,20 +172,19 @@ export default function LezioniAppPage() {
       <div style={{ marginBottom: '20px' }}>
         <div style={{ fontSize: '22px', fontWeight: '800' }}>Lezioni disponibili</div>
         <div style={{ fontSize: '13px', color: '#5a5a6a', marginTop: '4px' }}>
-  {filtered.length} lezioni · livello {student?.level === 'beginner' ? '🟢 Principiante' : student?.level === 'intermediate' ? '🟡 Intermedio' : '🔴 Avanzato'}
-</div>
+          {filtered.length} lezioni · livello {student?.level === 'beginner' ? '🟢 Principiante' : student?.level === 'intermediate' ? '🟡 Intermedio' : '🔴 Avanzato'}
+        </div>
+      </div>
 
       {/* Filtro per centro */}
       {clubs.length > 1 && (
         <div style={{ display: 'flex', gap: '6px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
-          <div
-            onClick={() => setActiveClubFilter('all')}
+          <div onClick={() => setActiveClubFilter('all')}
             style={{ padding: '6px 14px', borderRadius: '20px', cursor: 'pointer', fontSize: '13px', fontWeight: activeClubFilter === 'all' ? '700' : '400', background: activeClubFilter === 'all' ? '#c8f53a' : '#1e2535', color: activeClubFilter === 'all' ? '#0e1117' : '#8b93a8', whiteSpace: 'nowrap', flexShrink: 0 }}>
             Tutti
           </div>
           {clubs.map((club, i) => (
-            <div key={club.id}
-              onClick={() => setActiveClubFilter(club.id)}
+            <div key={club.id} onClick={() => setActiveClubFilter(club.id)}
               style={{ padding: '6px 14px', borderRadius: '20px', cursor: 'pointer', fontSize: '13px', fontWeight: activeClubFilter === club.id ? '700' : '400', background: activeClubFilter === club.id ? CLUB_COLORS[i % CLUB_COLORS.length] : '#1e2535', color: activeClubFilter === club.id ? '#0e1117' : '#8b93a8', whiteSpace: 'nowrap', flexShrink: 0 }}>
               {club.name}
             </div>
@@ -223,14 +213,12 @@ export default function LezioniAppPage() {
             return (
               <div key={lesson.lesson_id} style={{ background: isBooked ? 'linear-gradient(135deg, #1a2d42, #1a2540)' : '#161b27', border: `1px solid ${isBooked ? 'rgba(91,127,255,0.25)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '16px', padding: '18px', borderTop: `3px solid ${clubColor}` }}>
 
-                {/* Club badge */}
                 {clubs.length > 1 && (
                   <div style={{ fontSize: '11px', fontWeight: '700', color: clubColor, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     📍 {lesson.club_name}
                   </div>
                 )}
 
-                {/* Top row */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: '16px', fontWeight: '800', marginBottom: '4px' }}>{lesson.title}</div>
@@ -243,18 +231,15 @@ export default function LezioniAppPage() {
                   </span>
                 </div>
 
-                {/* Details */}
                 <div style={{ display: 'flex', gap: '14px', fontSize: '12px', color: '#8b93a8', marginBottom: '12px' }}>
                   <span>📍 {lesson.court}</span>
                   <span>👥 {lesson.booked_spots}/{lesson.max_spots} posti</span>
                 </div>
 
-                {/* Spots bar */}
                 <div style={{ height: '4px', background: '#1e2535', borderRadius: '2px', marginBottom: '14px', overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${(lesson.booked_spots / lesson.max_spots) * 100}%`, background: isFull ? '#e85858' : '#38c97a', borderRadius: '2px' }} />
                 </div>
 
-                {/* Action */}
                 {isBooked ? (
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1, background: 'rgba(62,230,160,0.12)', border: '1px solid rgba(62,230,160,0.25)', borderRadius: '10px', padding: '10px', textAlign: 'center', fontSize: '13px', fontWeight: '700', color: '#3ee6a0' }}>
