@@ -1,4 +1,4 @@
-'use client'
+  'use client'
 
 import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase'
@@ -131,31 +131,44 @@ function SuperAdminContent() {
   }
 
   async function handleChangePlan(clubId: string, plan: string, currentExpiry: string | null) {
-    const updates: any = { plan }
+  let newExpiry: string | null = currentExpiry ?? null
 
-    if (plan === 'free') {
-      updates.plan_expires_at = null
-    } else if (!currentExpiry) {
-      const expiry = new Date()
-      expiry.setDate(expiry.getDate() + 30)
-      updates.plan_expires_at = expiry.toISOString()
-    }
-
-    await supabase.from('clubs').update(updates).eq('id', clubId)
-    await loadData()
+  if (plan === 'free') {
+    newExpiry = null
+  } else if (!currentExpiry) {
+    const expiry = new Date()
+    expiry.setDate(expiry.getDate() + 30)
+    newExpiry = expiry.toISOString()
   }
+
+  // Sincronizza il piano su TUTTI i club dell'istruttore
+  await supabase.rpc('sync_instructor_plan', {
+    instructor_club_id: clubId,
+    new_plan:           plan,
+    new_expires_at:     newExpiry
+  })
+
+  await loadData()
+}
 
   async function handleSetExpiry(clubId: string) {
-    if (!expiryDate) return
-    const expiry = new Date(expiryDate)
-    expiry.setHours(23, 59, 59)
-    await supabase.from('clubs')
-      .update({ plan_expires_at: expiry.toISOString() })
-      .eq('id', clubId)
-    setEditingExpiry(null)
-    setExpiryDate('')
-    await loadData()
-  }
+  if (!expiryDate) return
+  const expiry = new Date(expiryDate)
+  expiry.setHours(23, 59, 59)
+
+  // Trova il piano attuale
+  const club = clubs.find(c => c.id === clubId)
+
+  await supabase.rpc('sync_instructor_plan', {
+    instructor_club_id: clubId,
+    new_plan:           club?.plan ?? 'free',
+    new_expires_at:     expiry.toISOString()
+  })
+
+  setEditingExpiry(null)
+  setExpiryDate('')
+  await loadData()
+}
 
   async function handleRevokeInstructor(instructor: Instructor) {
     if (!confirm(`Revocare l'accesso a ${instructor.email}?\n\nVerranno eliminati il club e tutti i dati associati.`)) return
