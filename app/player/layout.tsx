@@ -4,7 +4,6 @@ import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 
-
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any>(null)
   const router = useRouter()
@@ -32,13 +31,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     check()
   }, [])
 
-  
-
   const navItems = [
-    { label: 'Home',      icon: '🏠', path: '/player' },
-    { label: 'Lezioni',   icon: '📅', path: '/player/lezioni' },
-    { label: 'Le mie',    icon: '🎾', path: '/player/mie-lezioni' },
-    { label: 'Profilo',   icon: '👤', path: '/player/profilo' },
+    { label: 'Home',    icon: '🏠', path: '/player' },
+    { label: 'Lezioni', icon: '📅', path: '/player/lezioni' },
+    { label: 'Le mie',  icon: '🎾', path: '/player/mie-lezioni' },
+    { label: 'Profilo', icon: '👤', path: '/player/profilo' },
+    { label: 'FAQ',     icon: '❓', path: '/player/faq' },
   ]
 
   return (
@@ -64,8 +62,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           const isActive = pathname === item.path
           return (
             <div key={item.path} onClick={() => router.push(item.path)}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', cursor: 'pointer', padding: '4px 16px', borderRadius: '10px', minWidth: '60px' }}>
-              <div style={{ fontSize: '22px' }}>{item.icon}</div>
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', cursor: 'pointer', padding: '4px 10px', borderRadius: '10px', minWidth: '52px' }}>
+              <div style={{ fontSize: '20px' }}>{item.icon}</div>
               <div style={{ fontSize: '10px', fontWeight: isActive ? '700' : '400', color: isActive ? '#c8f53a' : 'rgba(255,255,255,0.35)' }}>
                 {item.label}
               </div>

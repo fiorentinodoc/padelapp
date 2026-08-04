@@ -108,6 +108,7 @@ useEffect(() => {
     { label: 'Abbonamento',  icon: '💳', path: '/dashboard/abbonamento' },
     { label: 'Personalizza', icon: '🎨', path: '/dashboard/personalizzazione' },
     { label: 'Centri',       icon: '🏟️', path: '/dashboard/centri' },
+    { label: 'FAQ',          icon: '❓', path: '/dashboard/faq' },
   ]
 
   const planColor: Record<string, string> = {
