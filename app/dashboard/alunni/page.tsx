@@ -192,13 +192,13 @@ export default function AlunniPage() {
         .eq('id', form.club_ids[0])
         .single()
 
-      const planLimits: Record<string, number> = { free: 20, starter: 100, pro: 99999 }
+      const planLimits: Record<string, number> = { free: 10, starter: 100, pro: 99999 }
       const maxStudents = planLimits[clubData?.plan ?? 'free']
 
       if (students.length >= maxStudents) {
         setError(
           clubData?.plan === 'free'
-            ? '⚠️ Piano Free: limite di 20 alunni raggiunto. Passa a Starter per fino a 100 alunni.'
+            ? '⚠️ Piano Free: limite di 10 alunni raggiunto. Passa a Starter per fino a 100 alunni.'
             : '⚠️ Piano Starter: limite di 100 alunni raggiunto. Passa a Pro per alunni illimitati.'
         )
         setSaving(false)

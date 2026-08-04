@@ -42,7 +42,7 @@ export default function AbbonamentoPage() {
       color: textMuted,
       features: [
         '1 centro',
-        'Max 20 alunni',
+        'Max 10 alunni',
         'Calendario lezioni',
         'Link invito alunni',
         'Notifiche WhatsApp manuali',
@@ -60,7 +60,7 @@ export default function AbbonamentoPage() {
       period: 'al mese',
       color: '#5b7fff',
       features: [
-        'Fino a 3 centri',
+        'Fino a 2 centri',
         'Max 100 alunni',
         'Tutto il piano Free +',
         'Notifiche WhatsApp automatiche',

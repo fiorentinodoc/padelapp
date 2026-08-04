@@ -82,7 +82,7 @@ export default function CentriPage() {
 
       if (updateError) { setError('Errore: ' + updateError.message); setSaving(false); return }
     } else {
-      const planLimits: Record<string, number> = { free: 1, starter: 3, pro: 999 }
+      const planLimits: Record<string, number> = { free: 1, starter: 2, pro: 999 }
       const { data: firstClub } = await supabase
         .from('clubs').select('plan').eq('id', clubs[0]?.id).single()
 
@@ -93,7 +93,7 @@ export default function CentriPage() {
         setError(
           plan === 'free'
             ? '⚠️ Piano Free: puoi avere solo 1 centro. Passa a Starter per aggiungerne fino a 3.'
-            : '⚠️ Piano Starter: hai raggiunto il limite di 3 centri. Passa a Pro per centri illimitati.'
+            : '⚠️ Piano Starter: hai raggiunto il limite di 2 centri. Passa a Pro per centri illimitati.'
         )
         setSaving(false)
         return
