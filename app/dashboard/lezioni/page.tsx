@@ -127,7 +127,7 @@ export default function LezioniPage() {
 
     let query = supabase
       .from('students')
-      .select('id, first_name, last_name, level')
+      .select('id, first_name, last_name, level, phone')
       .in('id', studentIdsInClub)
       .eq('status', 'active')
 
@@ -140,32 +140,32 @@ export default function LezioniPage() {
     setSelectedStudentId('')
   }
 
-  aasync function handleAddBooking() {
-  if (!editingLesson || !selectedStudentId) return
-  setAddingStudent(true)
+  async function handleAddBooking() {
+    if (!editingLesson || !selectedStudentId) return
+    setAddingStudent(true)
 
-  await supabase.from('bookings').insert({
-    lesson_id:    editingLesson.id,
-    student_id:   selectedStudentId,
-    status:       'confirmed',
-    confirmed_at: new Date().toISOString()
-  })
+    await supabase.from('bookings').insert({
+      lesson_id:    editingLesson.id,
+      student_id:   selectedStudentId,
+      status:       'confirmed',
+      confirmed_at: new Date().toISOString()
+    })
 
-  // Manda WhatsApp di conferma all'alunno
-  const student = availableStudents.find(s => s.id === selectedStudentId)
-  if (student?.phone) {
-    const date    = new Date(editingLesson.starts_at)
-    const dateStr = date.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
-    const timeStr = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-    const club    = clubs.find(c => c.id === editingLesson.club_id)
-    const cleaned = student.phone.replace(/\s+/g, '').replace(/[^\d+]/g, '')
-    const msg     = `Ciao ${student.first_name}! 🎾\n\nSei stato iscritto alla lezione:\n\n📅 *${editingLesson.title}*\n🗓 ${dateStr} alle ${timeStr}\n📍 ${editingLesson.court}${club ? `\n🏟 ${club.name}` : ''}\n\nA presto!`
-    window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(msg)}`, '_blank')
+    // Manda WhatsApp di conferma all'alunno
+    const student = availableStudents.find(s => s.id === selectedStudentId)
+    if (student?.phone) {
+      const date    = new Date(editingLesson.starts_at)
+      const dateStr = date.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
+      const timeStr = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+      const club    = clubs.find(c => c.id === editingLesson.club_id)
+      const cleaned = student.phone.replace(/\s+/g, '').replace(/[^\d+]/g, '')
+      const msg     = `Ciao ${student.first_name}! 🎾\n\nSei stato iscritto alla lezione:\n\n📅 *${editingLesson.title}*\n🗓 ${dateStr} alle ${timeStr}\n📍 ${editingLesson.court}${club ? `\n🏟 ${club.name}` : ''}\n\nA presto!`
+      window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(msg)}`, '_blank')
+    }
+
+    await loadBookings(editingLesson.id, editingLesson.club_id)
+    setAddingStudent(false)
   }
-
-  await loadBookings(editingLesson.id, editingLesson.club_id)
-  setAddingStudent(false)
-}
 
   async function handleRemoveBooking(bookingId: string) {
     if (!confirm('Rimuovere questo alunno dalla lezione?')) return
@@ -402,10 +402,8 @@ export default function LezioniPage() {
           </div>
         </div>
 
-        {/* Legenda + filtri livelli e centri */}
+        {/* Legenda + filtri */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-
-          {/* Filtri livello cliccabili */}
           {[
             { level: 'beginner',     label: 'Principiante' },
             { level: 'intermediate', label: 'Intermedio' },
@@ -419,7 +417,6 @@ export default function LezioniPage() {
             </div>
           ))}
 
-          {/* Reset filtro livello */}
           {filterLevel !== 'all' && (
             <div onClick={() => setFilterLevel('all')}
               style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '11px', border: `1px solid ${border}`, cursor: 'pointer', background: surface2, color: textMuted }}>
@@ -427,12 +424,10 @@ export default function LezioniPage() {
             </div>
           )}
 
-          {/* Separatore */}
           {clubs.length > 1 && (
             <div style={{ width: '1px', height: '20px', background: border, margin: '0 2px' }} />
           )}
 
-          {/* Filtri centri cliccabili */}
           {clubs.length > 1 && clubs.map((club, i) => (
             <div key={club.id}
               onClick={() => setFilterClubId(filterClubId === club.id ? 'all' : club.id)}
@@ -442,7 +437,6 @@ export default function LezioniPage() {
             </div>
           ))}
 
-          {/* Reset filtro centro */}
           {clubs.length > 1 && filterClubId !== 'all' && (
             <div onClick={() => setFilterClubId('all')}
               style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '11px', border: `1px solid ${border}`, cursor: 'pointer', background: surface2, color: textMuted }}>
