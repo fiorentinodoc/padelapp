@@ -140,18 +140,32 @@ export default function LezioniPage() {
     setSelectedStudentId('')
   }
 
-  async function handleAddBooking() {
-    if (!editingLesson || !selectedStudentId) return
-    setAddingStudent(true)
-    await supabase.from('bookings').insert({
-      lesson_id:    editingLesson.id,
-      student_id:   selectedStudentId,
-      status:       'confirmed',
-      confirmed_at: new Date().toISOString()
-    })
-    await loadBookings(editingLesson.id, editingLesson.club_id)
-    setAddingStudent(false)
+  aasync function handleAddBooking() {
+  if (!editingLesson || !selectedStudentId) return
+  setAddingStudent(true)
+
+  await supabase.from('bookings').insert({
+    lesson_id:    editingLesson.id,
+    student_id:   selectedStudentId,
+    status:       'confirmed',
+    confirmed_at: new Date().toISOString()
+  })
+
+  // Manda WhatsApp di conferma all'alunno
+  const student = availableStudents.find(s => s.id === selectedStudentId)
+  if (student?.phone) {
+    const date    = new Date(editingLesson.starts_at)
+    const dateStr = date.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
+    const timeStr = date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+    const club    = clubs.find(c => c.id === editingLesson.club_id)
+    const cleaned = student.phone.replace(/\s+/g, '').replace(/[^\d+]/g, '')
+    const msg     = `Ciao ${student.first_name}! 🎾\n\nSei stato iscritto alla lezione:\n\n📅 *${editingLesson.title}*\n🗓 ${dateStr} alle ${timeStr}\n📍 ${editingLesson.court}${club ? `\n🏟 ${club.name}` : ''}\n\nA presto!`
+    window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(msg)}`, '_blank')
   }
+
+  await loadBookings(editingLesson.id, editingLesson.club_id)
+  setAddingStudent(false)
+}
 
   async function handleRemoveBooking(bookingId: string) {
     if (!confirm('Rimuovere questo alunno dalla lezione?')) return
