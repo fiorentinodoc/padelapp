@@ -278,15 +278,7 @@ function LoginForm() {
                 placeholder="Ripeti la password" style={inputStyle} />
             </div>
 
-            {!joinCode && (
-              <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '10px', padding: '12px 14px', fontSize: '12px', color: '#8b93a8', marginBottom: '16px', lineHeight: '1.6' }}>
-                💡 Sei un istruttore?{' '}
-                <span onClick={() => router.push('/richiedi-accesso')}
-                  style={{ color: '#c8f53a', cursor: 'pointer', fontWeight: '600' }}>
-                  Richiedi l'accesso →
-                </span>
-              </div>
-            )}
+            
 
             {error && <ErrorBox msg={error} />}
             {success && <SuccessBox msg={success} />}
