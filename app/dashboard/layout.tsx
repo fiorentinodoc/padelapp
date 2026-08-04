@@ -58,14 +58,20 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     load()
   }, [])
 
-  // Blocca accesso se piano scaduto
-  useEffect(() => {
+  // Blocca accesso se piano scaduto — check ogni minuto
+useEffect(() => {
+  function checkExpiry() {
     if (!activeClub || isSuperAdmin) { setPlanBlocked(false); return }
     if (activeClub.plan === 'free') { setPlanBlocked(false); return }
     if (!activeClub.plan_expires_at) { setPlanBlocked(false); return }
     const expired = new Date(activeClub.plan_expires_at) < new Date()
     setPlanBlocked(expired)
-  }, [activeClub, isSuperAdmin])
+  }
+
+  checkExpiry()
+  const interval = setInterval(checkExpiry, 60000) // ogni minuto
+  return () => clearInterval(interval)
+}, [activeClub, isSuperAdmin])
 
   function switchClub(club: Club) {
     setActiveClub(club)

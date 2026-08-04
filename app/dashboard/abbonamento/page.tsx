@@ -116,10 +116,27 @@ export default function AbbonamentoPage() {
             position: 'relative'
           }}>
             {plan.current && (
-              <div style={{ position: 'absolute', top: '-1px', right: '16px', background: plan.color, color: plan.name === 'Pro' ? '#0e1117' : '#fff', fontSize: '10px', fontWeight: '800', padding: '4px 10px', borderRadius: '0 0 8px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Piano attuale
-              </div>
-            )}
+  <div>
+    <div style={{ width: '100%', padding: '12px', background: `${plan.color}15`, border: `1px solid ${plan.color}30`, borderRadius: '10px', textAlign: 'center', fontSize: '13px', fontWeight: '700', color: plan.color, marginBottom: plan.name !== 'Free' && activeClub?.plan_expires_at ? '8px' : '0' }}>
+      Piano attivo
+    </div>
+    {plan.name !== 'Free' && activeClub?.plan_expires_at && (() => {
+      const expiry = new Date((activeClub as any).plan_expires_at)
+      const diff   = Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      const color  = diff < 0 ? '#e85858' : diff <= 7 ? '#f5a623' : '#38c97a'
+      const label  = diff < 0
+        ? `⚠️ Scaduto il ${expiry.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}`
+        : diff === 0
+        ? '⚠️ Scade oggi'
+        : `✓ Scade il ${expiry.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })} (tra ${diff} giorni)`
+      return (
+        <div style={{ fontSize: '12px', color, fontWeight: '600', textAlign: 'center', padding: '6px 10px', background: `${color}10`, border: `1px solid ${color}30`, borderRadius: '8px' }}>
+          {label}
+        </div>
+      )
+    })()}
+  </div>
+)}
 
             <div style={{ fontSize: '18px', fontWeight: '800', color: plan.color, marginBottom: '4px' }}>{plan.name}</div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginBottom: '20px' }}>
