@@ -20,6 +20,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const [userName, setUserName] = useState('')
   const [userEmail, setUserEmail] = useState('')
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [isManager, setIsManager] = useState(false)
   const [planBlocked, setPlanBlocked] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [clubMenuOpen, setClubMenuOpen] = useState(false)
@@ -54,24 +55,33 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
         if (name) setUserName(name)
         if (profile.role === 'super_admin') setIsSuperAdmin(true)
       }
+
+      // Controlla se è manager (collaboratore)
+      const { data: icRole } = await supabase
+        .from('instructor_clubs')
+        .select('role')
+        .eq('profile_id', user.id)
+        .limit(1)
+        .single()
+
+      if (icRole?.role === 'manager') setIsManager(true)
     }
     load()
   }, [])
 
-  // Blocca accesso se piano scaduto — check ogni minuto
-useEffect(() => {
-  function checkExpiry() {
-    if (!activeClub || isSuperAdmin) { setPlanBlocked(false); return }
-    if (activeClub.plan === 'free') { setPlanBlocked(false); return }
-    if (!activeClub.plan_expires_at) { setPlanBlocked(false); return }
-    const expired = new Date(activeClub.plan_expires_at) < new Date()
-    setPlanBlocked(expired)
-  }
-
-  checkExpiry()
-  const interval = setInterval(checkExpiry, 60000) // ogni minuto
-  return () => clearInterval(interval)
-}, [activeClub, isSuperAdmin])
+  // Blocca accesso se piano scaduto
+  useEffect(() => {
+    function checkExpiry() {
+      if (!activeClub || isSuperAdmin) { setPlanBlocked(false); return }
+      if (activeClub.plan === 'free') { setPlanBlocked(false); return }
+      if (!activeClub.plan_expires_at) { setPlanBlocked(false); return }
+      const expired = new Date(activeClub.plan_expires_at) < new Date()
+      setPlanBlocked(expired)
+    }
+    checkExpiry()
+    const interval = setInterval(checkExpiry, 60000)
+    return () => clearInterval(interval)
+  }, [activeClub, isSuperAdmin])
 
   function switchClub(club: Club) {
     setActiveClub(club)
@@ -98,18 +108,20 @@ useEffect(() => {
   const isExpired  = expiryDays !== null && expiryDays < 0
   const isExpiring = expiryDays !== null && expiryDays >= 0 && expiryDays <= 7
 
-  const navItems = [
-    { label: 'Dashboard',    icon: '▦',  path: '/dashboard' },
-    { label: 'Lezioni',      icon: '📅', path: '/dashboard/lezioni' },
-    { label: 'Alunni',       icon: '👥', path: '/dashboard/alunni' },
-    { label: 'Notifiche',    icon: '🔔', path: '/dashboard/notifiche' },
-    { label: 'Analytics',    icon: '📊', path: '/dashboard/analytics' },
-    { label: 'Inviti',       icon: '🔗', path: '/dashboard/inviti' },
-    { label: 'Abbonamento',  icon: '💳', path: '/dashboard/abbonamento' },
-    { label: 'Personalizza', icon: '🎨', path: '/dashboard/personalizzazione' },
-    { label: 'Centri',       icon: '🏟️', path: '/dashboard/centri' },
-    { label: 'FAQ',          icon: '❓', path: '/dashboard/faq' },
+  const allNavItems = [
+    { label: 'Dashboard',    icon: '▦',  path: '/dashboard',                  managerOk: true },
+    { label: 'Lezioni',      icon: '📅', path: '/dashboard/lezioni',           managerOk: true },
+    { label: 'Alunni',       icon: '👥', path: '/dashboard/alunni',            managerOk: true },
+    { label: 'Notifiche',    icon: '🔔', path: '/dashboard/notifiche',         managerOk: true },
+    { label: 'Analytics',    icon: '📊', path: '/dashboard/analytics',         managerOk: true },
+    { label: 'Inviti',       icon: '🔗', path: '/dashboard/inviti',            managerOk: true },
+    { label: 'Abbonamento',  icon: '💳', path: '/dashboard/abbonamento',       managerOk: false },
+    { label: 'Personalizza', icon: '🎨', path: '/dashboard/personalizzazione', managerOk: false },
+    { label: 'Centri',       icon: '🏟️', path: '/dashboard/centri',           managerOk: false },
+    { label: 'FAQ',          icon: '❓', path: '/dashboard/faq',               managerOk: true },
   ]
+
+  const navItems = allNavItems.filter(item => !isManager || item.managerOk)
 
   const planColor: Record<string, string> = {
     free:    textMuted,
@@ -150,7 +162,7 @@ useEffect(() => {
   const SidebarInner = () => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: surface }}>
 
-      {/* Logo / Nome istruttore */}
+      {/* Logo / Nome */}
       <div style={{ padding: '20px 20px 14px', borderBottom: `1px solid ${border}` }}>
         {activeClub?.logo_url ? (
           <img src={activeClub.logo_url} alt="Logo" style={{ maxHeight: '36px', maxWidth: '140px', objectFit: 'contain' }} />
@@ -164,6 +176,11 @@ useEffect(() => {
                 {activeClub.name}
               </div>
             )}
+          </div>
+        )}
+        {isManager && (
+          <div style={{ marginTop: '6px', fontSize: '10px', fontWeight: '700', color: '#5b7fff', background: 'rgba(91,127,255,0.1)', padding: '2px 8px', borderRadius: '10px', display: 'inline-block' }}>
+            Collaboratore
           </div>
         )}
       </div>
@@ -204,16 +221,18 @@ useEffect(() => {
                 {activeClub?.id === club.id && <div style={{ color: pc, fontSize: '12px' }}>✓</div>}
               </div>
             ))}
-            <div onClick={() => { setClubMenuOpen(false); navigate('/dashboard/centri') }}
-              style={{ padding: '10px 14px', cursor: 'pointer', fontSize: '13px', color: pc, fontWeight: '600', textAlign: 'center' }}>
-              + Aggiungi centro
-            </div>
+            {!isManager && (
+              <div onClick={() => { setClubMenuOpen(false); navigate('/dashboard/centri') }}
+                style={{ padding: '10px 14px', cursor: 'pointer', fontSize: '13px', color: pc, fontWeight: '600', textAlign: 'center' }}>
+                + Aggiungi centro
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Banner scadenza */}
-      {isExpired && (
+      {isExpired && !isManager && (
         <div style={{ margin: '10px 12px', background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.3)', borderRadius: '8px', padding: '10px 12px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: '#e85858', marginBottom: '4px' }}>⚠️ Piano scaduto</div>
           <div style={{ fontSize: '11px', color: textSub, marginBottom: '6px' }}>Il tuo piano {activeClub?.plan} è scaduto</div>
@@ -224,7 +243,7 @@ useEffect(() => {
         </div>
       )}
 
-      {isExpiring && !isExpired && (
+      {isExpiring && !isExpired && !isManager && (
         <div style={{ margin: '10px 12px', background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)', borderRadius: '8px', padding: '10px 12px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: '#f5a623', marginBottom: '4px' }}>⏳ Piano in scadenza</div>
           <div style={{ fontSize: '11px', color: textSub, marginBottom: '6px' }}>Scade tra {expiryDays} giorni</div>
@@ -235,10 +254,10 @@ useEffect(() => {
         </div>
       )}
 
-      {activeClub?.plan === 'free' && !isSuperAdmin && !isExpired && (
+      {activeClub?.plan === 'free' && !isSuperAdmin && !isManager && !isExpired && (
         <div style={{ margin: '10px 12px', background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.2)', borderRadius: '8px', padding: '10px 12px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: '#5b7fff', marginBottom: '4px' }}>Piano Free</div>
-          <div style={{ fontSize: '11px', color: textSub, marginBottom: '6px' }}>1 centro · max 20 alunni</div>
+          <div style={{ fontSize: '11px', color: textSub, marginBottom: '6px' }}>1 centro · max 10 alunni</div>
           <div style={{ fontSize: '11px', color: '#5b7fff', fontWeight: '600', cursor: 'pointer' }}
             onClick={() => navigate('/dashboard/abbonamento')}>
             Passa a Starter →

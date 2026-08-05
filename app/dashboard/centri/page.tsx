@@ -12,15 +12,31 @@ interface Club {
   whatsapp_number: string | null
 }
 
+interface Collaborator {
+  id: string
+  email: string
+  club_id: string
+  used: boolean
+  created_at: string
+  profile?: { first_name: string; last_name: string } | null
+}
+
 export default function CentriPage() {
   const [clubs, setClubs] = useState<Club[]>([])
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [showCollabModal, setShowCollabModal] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [savingCollab, setSavingCollab] = useState(false)
   const [error, setError] = useState('')
+  const [collabError, setCollabError] = useState('')
   const [editingClub, setEditingClub] = useState<Club | null>(null)
+  const [selectedClubForCollab, setSelectedClubForCollab] = useState<Club | null>(null)
   const [isMobile, setIsMobile] = useState(false)
+  const [isOwner, setIsOwner] = useState(false)
   const [form, setForm] = useState({ name: '', whatsapp_number: '' })
+  const [collabEmail, setCollabEmail] = useState('')
   const { activeClub, refreshClub } = useClub()
   const { bg, surface, surface2, border, text, textSub, textMuted, pc } = useTheme()
   const router = useRouter()
@@ -41,11 +57,29 @@ export default function CentriPage() {
 
     const { data: ic } = await supabase
       .from('instructor_clubs')
-      .select('clubs(id, name, plan, whatsapp_number)')
+      .select('clubs(id, name, plan, whatsapp_number), role')
       .eq('profile_id', user.id)
 
     const clubList = ic?.map((c: any) => c.clubs).filter(Boolean) ?? []
     setClubs(clubList)
+
+    // Controlla se è owner di almeno un club
+    const ownerRole = ic?.some((c: any) => c.role === 'owner')
+    setIsOwner(!!ownerRole)
+
+    // Carica collaboratori per i club di cui è owner
+    const ownerClubIds = ic?.filter((c: any) => c.role === 'owner').map((c: any) => c.clubs?.id).filter(Boolean) ?? []
+
+    if (ownerClubIds.length > 0) {
+      const { data: collabs } = await supabase
+        .from('collaborator_invites')
+        .select('*')
+        .in('club_id', ownerClubIds)
+        .order('created_at', { ascending: false })
+
+      setCollaborators(collabs ?? [])
+    }
+
     setLoading(false)
   }
 
@@ -63,6 +97,13 @@ export default function CentriPage() {
     setShowModal(true)
   }
 
+  function openCollabModal(club: Club) {
+    setSelectedClubForCollab(club)
+    setCollabEmail('')
+    setCollabError('')
+    setShowCollabModal(true)
+  }
+
   async function handleSave() {
     if (!form.name) { setError('Il nome del centro è obbligatorio'); return }
     setSaving(true)
@@ -74,25 +115,20 @@ export default function CentriPage() {
     if (editingClub) {
       const { error: updateError } = await supabase
         .from('clubs')
-        .update({
-          name:             form.name,
-          whatsapp_number:  form.whatsapp_number || null
-        })
+        .update({ name: form.name, whatsapp_number: form.whatsapp_number || null })
         .eq('id', editingClub.id)
-
       if (updateError) { setError('Errore: ' + updateError.message); setSaving(false); return }
     } else {
       const planLimits: Record<string, number> = { free: 1, starter: 2, pro: 999 }
       const { data: firstClub } = await supabase
         .from('clubs').select('plan').eq('id', clubs[0]?.id).single()
-
       const plan      = firstClub?.plan ?? 'free'
       const maxCourts = planLimits[plan] ?? 1
 
       if (clubs.length >= maxCourts) {
         setError(
           plan === 'free'
-            ? '⚠️ Piano Free: puoi avere solo 1 centro. Passa a Starter per aggiungerne fino a 3.'
+            ? '⚠️ Piano Free: puoi avere solo 1 centro. Passa a Starter per aggiungerne fino a 2.'
             : '⚠️ Piano Starter: hai raggiunto il limite di 2 centri. Passa a Pro per centri illimitati.'
         )
         setSaving(false)
@@ -102,27 +138,70 @@ export default function CentriPage() {
       const slug = form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now()
       const { data: newClub, error: clubError } = await supabase
         .from('clubs')
-        .insert({
-          name:            form.name,
-          slug,
-          plan,
-          max_students:    20,
-          whatsapp_number: form.whatsapp_number || null
-        })
-        .select()
-        .single()
+        .insert({ name: form.name, slug, plan, max_students: 20, whatsapp_number: form.whatsapp_number || null })
+        .select().single()
 
       if (clubError) { setError('Errore: ' + clubError.message); setSaving(false); return }
 
-      await supabase.from('instructor_clubs').insert({
-        profile_id: user.id, club_id: newClub.id, role: 'owner'
-      })
+      await supabase.from('instructor_clubs').insert({ profile_id: user.id, club_id: newClub.id, role: 'owner' })
     }
 
     setShowModal(false)
     await loadData()
     refreshClub()
     setSaving(false)
+  }
+
+  async function handleAddCollab() {
+    if (!collabEmail || !selectedClubForCollab) { setCollabError('Inserisci l\'email del collaboratore'); return }
+    setSavingCollab(true)
+    setCollabError('')
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { error } = await supabase
+      .from('collaborator_invites')
+      .upsert({
+        email:       collabEmail.toLowerCase().trim(),
+        club_id:     selectedClubForCollab.id,
+        invited_by:  user.id,
+        used:        false
+      }, { onConflict: 'email,club_id' })
+
+    if (error) { setCollabError('Errore: ' + error.message); setSavingCollab(false); return }
+
+    const link = 'https://padelapp-zeta.vercel.app/login'
+    const msg  = `Ciao! Sei stato invitato come collaboratore del club *${selectedClubForCollab.name}* su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${collabEmail}) per registrarti.`
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+
+    setShowCollabModal(false)
+    await loadData()
+    setSavingCollab(false)
+  }
+
+  async function handleRevokeCollab(collab: Collaborator) {
+    if (!confirm(`Revocare l'accesso al collaboratore ${collab.email}?`)) return
+    await supabase.from('collaborator_invites').delete().eq('id', collab.id)
+
+    // Rimuovi anche da instructor_clubs se già registrato
+    if (collab.used) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', (await supabase.auth.getUser()).data.user?.id)
+
+      // Trova il profilo dell'email
+      const { data: authUsers } = await supabase.rpc('get_user_by_email', { user_email: collab.email }).single()
+      if (authUsers) {
+        await supabase.from('instructor_clubs')
+          .delete()
+          .eq('profile_id', (authUsers as any).id)
+          .eq('club_id', collab.club_id)
+      }
+    }
+
+    await loadData()
   }
 
   async function handleDelete(club: Club) {
@@ -155,6 +234,7 @@ export default function CentriPage() {
   return (
     <div style={{ padding: isMobile ? '20px 16px' : '32px', fontFamily: 'system-ui', color: text, background: bg, minHeight: '100vh' }}>
 
+      {/* CENTRI */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div>
           <div style={{ fontSize: '22px', fontWeight: '800' }}>Centri</div>
@@ -162,10 +242,12 @@ export default function CentriPage() {
             {clubs.length} {clubs.length === 1 ? 'centro' : 'centri'} attivi
           </div>
         </div>
-        <button onClick={openNew}
-          style={{ background: pc, border: 'none', color: '#0e1117', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-          + Aggiungi centro
-        </button>
+        {isOwner && (
+          <button onClick={openNew}
+            style={{ background: pc, border: 'none', color: '#0e1117', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            + Aggiungi centro
+          </button>
+        )}
       </div>
 
       {clubs.length === 0 ? (
@@ -178,52 +260,90 @@ export default function CentriPage() {
           </button>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {clubs.map(club => (
-            <div key={club.id} style={{ background: surface, border: `1px solid ${activeClub?.id === club.id ? pc : border}`, borderLeft: `3px solid ${activeClub?.id === club.id ? pc : border}`, borderRadius: '14px', padding: '18px 20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '700', color: text }}>{club.name}</div>
-                    {activeClub?.id === club.id && (
-                      <span style={{ background: `${pc}18`, color: pc, border: `1px solid ${pc}30`, padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '700' }}>
-                        Attivo
-                      </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '32px' }}>
+          {clubs.map(club => {
+            const clubCollabs = collaborators.filter(c => c.club_id === club.id)
+            const isClubOwner = true // già filtrato da loadData
+            return (
+              <div key={club.id} style={{ background: surface, border: `1px solid ${activeClub?.id === club.id ? pc : border}`, borderLeft: `3px solid ${activeClub?.id === club.id ? pc : border}`, borderRadius: '14px', padding: '18px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                      <div style={{ fontSize: '16px', fontWeight: '700', color: text }}>{club.name}</div>
+                      {activeClub?.id === club.id && (
+                        <span style={{ background: `${pc}18`, color: pc, border: `1px solid ${pc}30`, padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '700' }}>
+                          Attivo
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '11px', color: textMuted, marginBottom: club.whatsapp_number ? '4px' : '0' }}>
+                      Piano: {club.plan}
+                    </div>
+                    {club.whatsapp_number && (
+                      <div style={{ fontSize: '12px', color: '#25D366' }}>📱 {club.whatsapp_number}</div>
+                    )}
+                    {!club.whatsapp_number && (
+                      <div style={{ fontSize: '11px', color: '#e85858', marginTop: '2px' }}>⚠️ Numero WhatsApp non configurato</div>
+                    )}
+
+                    {/* Collaboratori */}
+                    {clubCollabs.length > 0 && (
+                      <div style={{ marginTop: '10px' }}>
+                        <div style={{ fontSize: '11px', color: textMuted, marginBottom: '6px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Collaboratori ({clubCollabs.length})
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {clubCollabs.map(c => (
+                            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: surface2, borderRadius: '8px', padding: '7px 10px' }}>
+                              <div style={{ flex: 1, fontSize: '12px', color: text }}>{c.email}</div>
+                              <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 8px', borderRadius: '20px', background: c.used ? 'rgba(56,201,122,0.12)' : 'rgba(245,166,35,0.12)', color: c.used ? '#38c97a' : '#f5a623' }}>
+                                {c.used ? '✅ Attivo' : '⏳ In attesa'}
+                              </span>
+                              {!c.used && (
+                                <button onClick={() => {
+                                  const link = 'https://padelapp-zeta.vercel.app/login'
+                                  const msg  = `Ciao! Sei stato invitato come collaboratore del club *${club.name}* su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${c.email}) per registrarti.`
+                                  window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+                                }}
+                                  style={{ background: '#25D366', border: 'none', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}>
+                                  📱
+                                </button>
+                              )}
+                              <button onClick={() => handleRevokeCollab(c)}
+                                style={{ background: 'rgba(232,88,88,0.08)', border: '1px solid rgba(232,88,88,0.15)', color: '#e85858', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', cursor: 'pointer' }}>
+                                Revoca
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
-                  <div style={{ fontSize: '11px', color: textMuted, marginBottom: club.whatsapp_number ? '4px' : '0' }}>
-                    Piano: {club.plan}
-                  </div>
-                  {club.whatsapp_number && (
-                    <div style={{ fontSize: '12px', color: '#25D366', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      📱 {club.whatsapp_number}
-                    </div>
-                  )}
-                  {!club.whatsapp_number && (
-                    <div style={{ fontSize: '11px', color: '#e85858', marginTop: '2px' }}>
-                      ⚠️ Numero WhatsApp non configurato
-                    </div>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-                  <button onClick={() => openEdit(club)}
-                    style={{ background: 'rgba(91,127,255,0.1)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>
-                    ✏️ Modifica
-                  </button>
-                  {clubs.length > 1 && (
-                    <button onClick={() => handleDelete(club)}
-                      style={{ background: 'rgba(232,88,88,0.08)', border: '1px solid rgba(232,88,88,0.15)', color: '#e85858', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' }}>
-                      Elimina
+
+                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px', flexShrink: 0 }}>
+                    <button onClick={() => openEdit(club)}
+                      style={{ background: 'rgba(91,127,255,0.1)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>
+                      ✏️ Modifica
                     </button>
-                  )}
+                    <button onClick={() => openCollabModal(club)}
+                      style={{ background: 'rgba(200,245,58,0.08)', border: `1px solid rgba(200,245,58,0.2)`, color: pc, padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>
+                      + Collaboratore
+                    </button>
+                    {clubs.length > 1 && (
+                      <button onClick={() => handleDelete(club)}
+                        style={{ background: 'rgba(232,88,88,0.08)', border: '1px solid rgba(232,88,88,0.15)', color: '#e85858', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' }}>
+                        Elimina
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
-      {/* MODAL */}
+      {/* MODAL CENTRO */}
       {showModal && (
         <div onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}>
@@ -243,14 +363,11 @@ export default function CentriPage() {
 
             <div style={{ marginBottom: '20px' }}>
               <label style={labelStyle}>Numero WhatsApp notifiche</label>
-              <input
-                type="tel"
-                value={form.whatsapp_number}
+              <input type="tel" value={form.whatsapp_number}
                 onChange={e => setForm({ ...form, whatsapp_number: e.target.value })}
-                placeholder="Es: +39 333 1234567"
-                style={inputStyle} />
+                placeholder="Es: +39 333 1234567" style={inputStyle} />
               <div style={{ fontSize: '11px', color: textMuted, marginTop: '6px' }}>
-                Riceverai un messaggio WhatsApp quando un alunno prenota una lezione in questo centro
+                Riceverai un WhatsApp quando un alunno prenota una lezione in questo centro
               </div>
             </div>
 
@@ -266,6 +383,47 @@ export default function CentriPage() {
               <button onClick={handleSave} disabled={saving}
                 style={{ flex: 2, padding: '13px', background: saving ? '#5a7a20' : pc, border: 'none', color: '#0e1117', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: saving ? 'not-allowed' : 'pointer' }}>
                 {saving ? 'Salvataggio...' : editingClub ? 'Salva modifiche' : 'Aggiungi centro'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL COLLABORATORE */}
+      {showCollabModal && (
+        <div onClick={e => { if (e.target === e.currentTarget) setShowCollabModal(false) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '0' : '20px' }}>
+          <div style={{ background: surface, border: `1px solid ${border}`, borderRadius: isMobile ? '20px 20px 0 0' : '20px', padding: '24px', width: '100%', maxWidth: isMobile ? '100%' : '420px' }}>
+            <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '6px', color: text }}>
+              Aggiungi collaboratore
+            </div>
+            <div style={{ fontSize: '13px', color: textMuted, marginBottom: '20px' }}>
+              {selectedClubForCollab?.name}
+            </div>
+
+            <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: textSub, marginBottom: '16px', lineHeight: '1.6' }}>
+              💡 Il collaboratore potrà gestire lezioni, alunni, notifiche e inviti — ma non potrà modificare le impostazioni del club.
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={labelStyle}>Email collaboratore *</label>
+              <input type="email" value={collabEmail}
+                onChange={e => setCollabEmail(e.target.value)}
+                placeholder="collaboratore@email.it" style={inputStyle} />
+            </div>
+
+            {collabError && (
+              <div style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.3)', borderRadius: '8px', padding: '10px 12px', color: '#e85858', fontSize: '13px', marginBottom: '16px' }}>{collabError}</div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => { setShowCollabModal(false); setCollabError('') }}
+                style={{ flex: 1, padding: '13px', background: 'transparent', border: `1px solid ${border}`, color: textSub, borderRadius: '10px', fontSize: '14px', cursor: 'pointer' }}>
+                Annulla
+              </button>
+              <button onClick={handleAddCollab} disabled={savingCollab}
+                style={{ flex: 2, padding: '13px', background: savingCollab ? '#5a7a20' : pc, border: 'none', color: '#0e1117', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: savingCollab ? 'not-allowed' : 'pointer' }}>
+                {savingCollab ? 'Invio...' : '📱 Aggiungi e manda WhatsApp'}
               </button>
             </div>
           </div>
