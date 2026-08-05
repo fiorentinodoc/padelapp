@@ -153,32 +153,84 @@ export default function CentriPage() {
   }
 
   async function handleAddCollab() {
-    if (!collabEmail || !selectedClubForCollab) { setCollabError('Inserisci l\'email del collaboratore'); return }
-    setSavingCollab(true)
-    setCollabError('')
+  if (!collabEmail || !selectedClubForCollab) { setCollabError('Inserisci l\'email del collaboratore'); return }
+  setSavingCollab(true)
+  setCollabError('')
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
 
-    const { error } = await supabase
-      .from('collaborator_invites')
+  const email = collabEmail.toLowerCase().trim()
+
+  // Inserisci l'invito
+  const { error } = await supabase
+    .from('collaborator_invites')
+    .upsert({
+      email,
+      club_id:    selectedClubForCollab.id,
+      invited_by: user.id,
+      used:       false
+    }, { onConflict: 'email,club_id' })
+
+  if (error) { setCollabError('Errore: ' + error.message); setSavingCollab(false); return }
+
+  // Controlla se è già registrato nel sistema
+  const { data: existingProfile } = await supabase
+    .from('profiles')
+    .select('id, role')
+    .eq('id', (
+      await supabase.from('profiles').select('id').eq('id',
+        // cerca tramite students o instructor_clubs
+        user.id
+      ).single()
+    ).data?.id ?? '')
+    .single()
+
+  // Cerca il profilo tramite students (se è un alunno)
+  const { data: studentRecord } = await supabase
+    .from('students')
+    .select('profile_id')
+    .eq('email', email)
+    .maybeSingle()
+
+  if (studentRecord?.profile_id) {
+    // È già registrato come studente — aggiungilo direttamente come manager
+    const { error: icError } = await supabase
+      .from('instructor_clubs')
       .upsert({
-        email:       collabEmail.toLowerCase().trim(),
-        club_id:     selectedClubForCollab.id,
-        invited_by:  user.id,
-        used:        false
-      }, { onConflict: 'email,club_id' })
+        profile_id: studentRecord.profile_id,
+        club_id:    selectedClubForCollab.id,
+        role:       'manager'
+      }, { onConflict: 'profile_id,club_id' })
 
-    if (error) { setCollabError('Errore: ' + error.message); setSavingCollab(false); return }
+    // Aggiorna il suo profilo a club_admin
+    if (!icError) {
+      await supabase.from('profiles')
+        .update({ role: 'club_admin' })
+        .eq('id', studentRecord.profile_id)
 
-    const link = 'https://padelapp-zeta.vercel.app/login'
-    const msg  = `Ciao! Sei stato invitato come collaboratore del club *${selectedClubForCollab.name}* su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${collabEmail}) per registrarti.`
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+      await supabase.from('collaborator_invites')
+        .update({ used: true })
+        .eq('email', email)
+        .eq('club_id', selectedClubForCollab.id)
 
-    setShowCollabModal(false)
-    await loadData()
-    setSavingCollab(false)
+      setShowCollabModal(false)
+      await loadData()
+      setSavingCollab(false)
+      alert(`✅ ${email} è stato aggiunto come collaboratore! Può già accedere alla dashboard.`)
+      return
+    }
   }
+
+  // Non è ancora registrato — manda il link
+  const link = 'https://padelapp-zeta.vercel.app/login'
+  const msg  = `Ciao! Sei stato invitato come collaboratore del club *${selectedClubForCollab.name}* su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${email}) per registrarti.`
+  window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+
+  setShowCollabModal(false)
+  await loadData()
+  setSavingCollab(false)
+}
 
   async function handleRevokeCollab(collab: Collaborator) {
     if (!confirm(`Revocare l'accesso al collaboratore ${collab.email}?`)) return
