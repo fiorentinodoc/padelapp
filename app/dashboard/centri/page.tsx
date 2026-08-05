@@ -18,7 +18,6 @@ interface Collaborator {
   club_id: string
   used: boolean
   created_at: string
-  profile?: { first_name: string; last_name: string } | null
 }
 
 export default function CentriPage() {
@@ -63,11 +62,9 @@ export default function CentriPage() {
     const clubList = ic?.map((c: any) => c.clubs).filter(Boolean) ?? []
     setClubs(clubList)
 
-    // Controlla se è owner di almeno un club
     const ownerRole = ic?.some((c: any) => c.role === 'owner')
     setIsOwner(!!ownerRole)
 
-    // Carica collaboratori per i club di cui è owner
     const ownerClubIds = ic?.filter((c: any) => c.role === 'owner').map((c: any) => c.clubs?.id).filter(Boolean) ?? []
 
     if (ownerClubIds.length > 0) {
@@ -76,7 +73,6 @@ export default function CentriPage() {
         .select('*')
         .in('club_id', ownerClubIds)
         .order('created_at', { ascending: false })
-
       setCollaborators(collabs ?? [])
     }
 
@@ -153,66 +149,44 @@ export default function CentriPage() {
   }
 
   async function handleAddCollab() {
-  if (!collabEmail || !selectedClubForCollab) { setCollabError('Inserisci l\'email del collaboratore'); return }
-  setSavingCollab(true)
-  setCollabError('')
+    if (!collabEmail || !selectedClubForCollab) { setCollabError('Inserisci l\'email del collaboratore'); return }
+    setSavingCollab(true)
+    setCollabError('')
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
 
-  const email = collabEmail.toLowerCase().trim()
+    const email = collabEmail.toLowerCase().trim()
 
-  // Inserisci l'invito
-  const { error } = await supabase
-    .from('collaborator_invites')
-    .upsert({
-      email,
-      club_id:    selectedClubForCollab.id,
-      invited_by: user.id,
-      used:       false
-    }, { onConflict: 'email,club_id' })
+    // Controlla se è già registrato nel sistema
+    const { data: existingProfile } = await supabase
+      .rpc('get_profile_by_email', { user_email: email })
+      .single()
 
-  if (error) { setCollabError('Errore: ' + error.message); setSavingCollab(false); return }
+    if (existingProfile?.profile_id) {
+      // È già registrato — aggiungilo direttamente come manager
+      await supabase.from('instructor_clubs')
+        .upsert({
+          profile_id: existingProfile.profile_id,
+          club_id:    selectedClubForCollab.id,
+          role:       'manager'
+        }, { onConflict: 'profile_id,club_id' })
 
-  // Controlla se è già registrato nel sistema
-  const { data: existingProfile } = await supabase
-    .from('profiles')
-    .select('id, role')
-    .eq('id', (
-      await supabase.from('profiles').select('id').eq('id',
-        // cerca tramite students o instructor_clubs
-        user.id
-      ).single()
-    ).data?.id ?? '')
-    .single()
+      // Aggiorna il profilo a club_admin se era student
+      if (existingProfile.role === 'student') {
+        await supabase.from('profiles')
+          .update({ role: 'club_admin' })
+          .eq('id', existingProfile.profile_id)
+      }
 
-  // Cerca il profilo tramite students (se è un alunno)
-  const { data: studentRecord } = await supabase
-    .from('students')
-    .select('profile_id')
-    .eq('email', email)
-    .maybeSingle()
-
-  if (studentRecord?.profile_id) {
-    // È già registrato come studente — aggiungilo direttamente come manager
-    const { error: icError } = await supabase
-      .from('instructor_clubs')
-      .upsert({
-        profile_id: studentRecord.profile_id,
-        club_id:    selectedClubForCollab.id,
-        role:       'manager'
-      }, { onConflict: 'profile_id,club_id' })
-
-    // Aggiorna il suo profilo a club_admin
-    if (!icError) {
-      await supabase.from('profiles')
-        .update({ role: 'club_admin' })
-        .eq('id', studentRecord.profile_id)
-
+      // Segna l'invito come usato
       await supabase.from('collaborator_invites')
-        .update({ used: true })
-        .eq('email', email)
-        .eq('club_id', selectedClubForCollab.id)
+        .upsert({
+          email,
+          club_id:    selectedClubForCollab.id,
+          invited_by: user.id,
+          used:       true
+        }, { onConflict: 'email,club_id' })
 
       setShowCollabModal(false)
       await loadData()
@@ -220,36 +194,55 @@ export default function CentriPage() {
       alert(`✅ ${email} è stato aggiunto come collaboratore! Può già accedere alla dashboard.`)
       return
     }
+
+    // Non è ancora registrato — inserisci invito e manda WhatsApp
+    const { error } = await supabase
+      .from('collaborator_invites')
+      .upsert({
+        email,
+        club_id:    selectedClubForCollab.id,
+        invited_by: user.id,
+        used:       false
+      }, { onConflict: 'email,club_id' })
+
+    if (error) { setCollabError('Errore: ' + error.message); setSavingCollab(false); return }
+
+    const link = 'https://padelapp-zeta.vercel.app/login'
+    const msg  = `Ciao! Sei stato invitato come collaboratore del club *${selectedClubForCollab.name}* su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${email}) per registrarti.`
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+
+    setShowCollabModal(false)
+    await loadData()
+    setSavingCollab(false)
   }
-
-  // Non è ancora registrato — manda il link
-  const link = 'https://padelapp-zeta.vercel.app/login'
-  const msg  = `Ciao! Sei stato invitato come collaboratore del club *${selectedClubForCollab.name}* su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${email}) per registrarti.`
-  window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-
-  setShowCollabModal(false)
-  await loadData()
-  setSavingCollab(false)
-}
 
   async function handleRevokeCollab(collab: Collaborator) {
     if (!confirm(`Revocare l'accesso al collaboratore ${collab.email}?`)) return
+
     await supabase.from('collaborator_invites').delete().eq('id', collab.id)
 
-    // Rimuovi anche da instructor_clubs se già registrato
     if (collab.used) {
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('id', (await supabase.auth.getUser()).data.user?.id)
+      const { data: profileData } = await supabase
+        .rpc('get_profile_by_email', { user_email: collab.email })
+        .single()
 
-      // Trova il profilo dell'email
-      const { data: authUsers } = await supabase.rpc('get_user_by_email', { user_email: collab.email }).single()
-      if (authUsers) {
+      if (profileData?.profile_id) {
         await supabase.from('instructor_clubs')
           .delete()
-          .eq('profile_id', (authUsers as any).id)
+          .eq('profile_id', profileData.profile_id)
           .eq('club_id', collab.club_id)
+
+        // Riporta a student se non ha altri club
+        const { data: otherClubs } = await supabase
+          .from('instructor_clubs')
+          .select('id')
+          .eq('profile_id', profileData.profile_id)
+
+        if (!otherClubs || otherClubs.length === 0) {
+          await supabase.from('profiles')
+            .update({ role: 'student' })
+            .eq('id', profileData.profile_id)
+        }
       }
     }
 
@@ -286,7 +279,6 @@ export default function CentriPage() {
   return (
     <div style={{ padding: isMobile ? '20px 16px' : '32px', fontFamily: 'system-ui', color: text, background: bg, minHeight: '100vh' }}>
 
-      {/* CENTRI */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div>
           <div style={{ fontSize: '22px', fontWeight: '800' }}>Centri</div>
@@ -315,7 +307,6 @@ export default function CentriPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '32px' }}>
           {clubs.map(club => {
             const clubCollabs = collaborators.filter(c => c.club_id === club.id)
-            const isClubOwner = true // già filtrato da loadData
             return (
               <div key={club.id} style={{ background: surface, border: `1px solid ${activeClub?.id === club.id ? pc : border}`, borderLeft: `3px solid ${activeClub?.id === club.id ? pc : border}`, borderRadius: '14px', padding: '18px 20px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
@@ -328,25 +319,22 @@ export default function CentriPage() {
                         </span>
                       )}
                     </div>
-                    <div style={{ fontSize: '11px', color: textMuted, marginBottom: club.whatsapp_number ? '4px' : '0' }}>
-                      Piano: {club.plan}
-                    </div>
-                    {club.whatsapp_number && (
+                    <div style={{ fontSize: '11px', color: textMuted, marginBottom: '4px' }}>Piano: {club.plan}</div>
+                    {club.whatsapp_number ? (
                       <div style={{ fontSize: '12px', color: '#25D366' }}>📱 {club.whatsapp_number}</div>
-                    )}
-                    {!club.whatsapp_number && (
-                      <div style={{ fontSize: '11px', color: '#e85858', marginTop: '2px' }}>⚠️ Numero WhatsApp non configurato</div>
+                    ) : (
+                      <div style={{ fontSize: '11px', color: '#e85858' }}>⚠️ Numero WhatsApp non configurato</div>
                     )}
 
                     {/* Collaboratori */}
                     {clubCollabs.length > 0 && (
-                      <div style={{ marginTop: '10px' }}>
+                      <div style={{ marginTop: '12px' }}>
                         <div style={{ fontSize: '11px', color: textMuted, marginBottom: '6px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Collaboratori ({clubCollabs.length})
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           {clubCollabs.map(c => (
-                            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: surface2, borderRadius: '8px', padding: '7px 10px' }}>
+                            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: surface2, borderRadius: '8px', padding: '8px 12px' }}>
                               <div style={{ flex: 1, fontSize: '12px', color: text }}>{c.email}</div>
                               <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 8px', borderRadius: '20px', background: c.used ? 'rgba(56,201,122,0.12)' : 'rgba(245,166,35,0.12)', color: c.used ? '#38c97a' : '#f5a623' }}>
                                 {c.used ? '✅ Attivo' : '⏳ In attesa'}
@@ -377,11 +365,13 @@ export default function CentriPage() {
                       style={{ background: 'rgba(91,127,255,0.1)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>
                       ✏️ Modifica
                     </button>
-                    <button onClick={() => openCollabModal(club)}
-                      style={{ background: 'rgba(200,245,58,0.08)', border: `1px solid rgba(200,245,58,0.2)`, color: pc, padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>
-                      + Collaboratore
-                    </button>
-                    {clubs.length > 1 && (
+                    {isOwner && (
+                      <button onClick={() => openCollabModal(club)}
+                        style={{ background: `${pc}10`, border: `1px solid ${pc}30`, color: pc, padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>
+                        + Collaboratore
+                      </button>
+                    )}
+                    {clubs.length > 1 && isOwner && (
                       <button onClick={() => handleDelete(club)}
                         style={{ background: 'rgba(232,88,88,0.08)', border: '1px solid rgba(232,88,88,0.15)', color: '#e85858', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' }}>
                         Elimina
@@ -419,7 +409,7 @@ export default function CentriPage() {
                 onChange={e => setForm({ ...form, whatsapp_number: e.target.value })}
                 placeholder="Es: +39 333 1234567" style={inputStyle} />
               <div style={{ fontSize: '11px', color: textMuted, marginTop: '6px' }}>
-                Riceverai un WhatsApp quando un alunno prenota una lezione in questo centro
+                Riceverai un WhatsApp quando un alunno prenota in questo centro
               </div>
             </div>
 
@@ -449,12 +439,14 @@ export default function CentriPage() {
             <div style={{ fontSize: '18px', fontWeight: '800', marginBottom: '6px', color: text }}>
               Aggiungi collaboratore
             </div>
-            <div style={{ fontSize: '13px', color: textMuted, marginBottom: '20px' }}>
+            <div style={{ fontSize: '13px', color: textMuted, marginBottom: '16px' }}>
               {selectedClubForCollab?.name}
             </div>
 
             <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: textSub, marginBottom: '16px', lineHeight: '1.6' }}>
-              💡 Il collaboratore potrà gestire lezioni, alunni, notifiche e inviti — ma non potrà modificare le impostazioni del club.
+              💡 Il collaboratore potrà gestire lezioni, alunni, notifiche e inviti.<br />
+              Non potrà modificare le impostazioni del club.<br />
+              Se è già registrato in app verrà aggiunto immediatamente.
             </div>
 
             <div style={{ marginBottom: '20px' }}>
@@ -475,7 +467,7 @@ export default function CentriPage() {
               </button>
               <button onClick={handleAddCollab} disabled={savingCollab}
                 style={{ flex: 2, padding: '13px', background: savingCollab ? '#5a7a20' : pc, border: 'none', color: '#0e1117', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: savingCollab ? 'not-allowed' : 'pointer' }}>
-                {savingCollab ? 'Invio...' : '📱 Aggiungi e manda WhatsApp'}
+                {savingCollab ? 'Aggiunta...' : '+ Aggiungi collaboratore'}
               </button>
             </div>
           </div>
