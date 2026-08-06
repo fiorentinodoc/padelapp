@@ -97,35 +97,55 @@ export default function CentriPage() {
     setShowModal(true)
   }
 
-  async function openCollabModal(club: Club) {
-    setSelectedClubForCollab(club)
-    setSelectedStudentId('')
-    setCollabError('')
-    setAvailableStudents([])
+async function openCollabModal(club: Club) {
+  setSelectedClubForCollab(club)
+  setSelectedStudentId('')
+  setCollabError('')
+  setAvailableStudents([])
 
-    // Carica tutti gli alunni registrati (con profile_id) del club
-    const { data: students } = await supabase
+  // Cerca alunni tramite club_id diretto
+  const { data: directStudents } = await supabase
+    .from('students')
+    .select('id, first_name, last_name, email, profile_id')
+    .eq('club_id', club.id)
+    .not('profile_id', 'is', null)
+    .eq('status', 'active')
+
+  // Cerca alunni tramite student_clubs
+  const { data: scLinks } = await supabase
+    .from('student_clubs')
+    .select('student_id')
+    .eq('club_id', club.id)
+
+  const scIds = (scLinks ?? []).map((s: any) => s.student_id)
+
+  let scStudents: any[] = []
+  if (scIds.length > 0) {
+    const { data } = await supabase
       .from('students')
       .select('id, first_name, last_name, email, profile_id')
-      .eq('club_id', club.id)
+      .in('id', scIds)
       .not('profile_id', 'is', null)
       .eq('status', 'active')
-      .order('first_name', { ascending: true })
-
-    // Filtra chi è già collaboratore attivo
-    const collabEmails = collaborators
-      .filter(c => c.club_id === club.id && c.used)
-      .map(c => c.email.toLowerCase())
-
-    const filtered = (students ?? []).filter(
-      s => !collabEmails.includes((s.email ?? '').toLowerCase())
-    )
-
-    setAvailableStudents(filtered)
-    setShowCollabModal(true)
-    console.log('students trovati:', filtered)
-console.log('club id cercato:', club.id)
+    scStudents = data ?? []
   }
+
+  // Unisci e deduplica per id
+  const allStudents = [...(directStudents ?? []), ...scStudents]
+  const unique = Array.from(new Map(allStudents.map(s => [s.id, s])).values())
+
+  // Filtra chi è già collaboratore
+  const collabEmails = collaborators
+    .filter(c => c.club_id === club.id && c.used)
+    .map(c => c.email.toLowerCase())
+
+  const filtered = unique.filter(
+    s => !collabEmails.includes((s.email ?? '').toLowerCase())
+  )
+
+  setAvailableStudents(filtered)
+  setShowCollabModal(true)
+}
 
   async function handleSave() {
     if (!form.name) { setError('Il nome del centro è obbligatorio'); return }
