@@ -66,7 +66,10 @@ export default function CentriPage() {
     const ownerRole = ic?.some((c: any) => c.role === 'owner')
     setIsOwner(!!ownerRole)
 
-    const ownerClubIds = ic?.filter((c: any) => c.role === 'owner').map((c: any) => c.clubs?.id).filter(Boolean) ?? []
+    const ownerClubIds = ic
+      ?.filter((c: any) => c.role === 'owner')
+      .map((c: any) => c.clubs?.id)
+      .filter(Boolean) ?? []
 
     if (ownerClubIds.length > 0) {
       const { data: collabs } = await supabase
@@ -98,32 +101,26 @@ export default function CentriPage() {
     setSelectedClubForCollab(club)
     setSelectedStudentId('')
     setCollabError('')
+    setAvailableStudents([])
 
-   // Carica alunni registrati del club tramite student_clubs
-const { data: scLinks } = await supabase
-  .from('student_clubs')
-  .select('student_id')
-  .eq('club_id', club.id)
+    // Carica tutti gli alunni registrati (con profile_id) del club
+    const { data: students } = await supabase
+      .from('students')
+      .select('id, first_name, last_name, email, profile_id')
+      .eq('club_id', club.id)
+      .not('profile_id', 'is', null)
+      .eq('status', 'active')
+      .order('first_name', { ascending: true })
 
-const studentIds = (scLinks ?? []).map((s: any) => s.student_id)
-
-let data: any[] = []
-if (studentIds.length > 0) {
-  const { data: studentsData } = await supabase
-    .from('students')
-    .select('id, first_name, last_name, email, profile_id')
-    .in('id', studentIds)
-    .not('profile_id', 'is', null)
-    .eq('status', 'active')
-  data = studentsData ?? []
-}
-
-    // Filtra chi è già collaboratore
+    // Filtra chi è già collaboratore attivo
     const collabEmails = collaborators
       .filter(c => c.club_id === club.id && c.used)
-      .map(c => c.email)
+      .map(c => c.email.toLowerCase())
 
-    const filtered = (data ?? []).filter(s => !collabEmails.includes(s.email))
+    const filtered = (students ?? []).filter(
+      s => !collabEmails.includes((s.email ?? '').toLowerCase())
+    )
+
     setAvailableStudents(filtered)
     setShowCollabModal(true)
   }
@@ -186,7 +183,7 @@ if (studentIds.length > 0) {
     const student = availableStudents.find(s => s.id === selectedStudentId)
     if (!student?.profile_id) { setCollabError('Alunno non registrato in app'); setSavingCollab(false); return }
 
-    // Aggiunge come manager
+    // Aggiunge come manager in instructor_clubs
     const { error: icError } = await supabase
       .from('instructor_clubs')
       .upsert({
@@ -197,12 +194,12 @@ if (studentIds.length > 0) {
 
     if (icError) { setCollabError('Errore: ' + icError.message); setSavingCollab(false); return }
 
-    // Promuovi a club_admin
+    // Promuovi profilo a club_admin
     await supabase.from('profiles')
       .update({ role: 'club_admin' })
       .eq('id', student.profile_id)
 
-    // Segna invito come usato
+    // Registra in collaborator_invites come usato
     await supabase.from('collaborator_invites')
       .upsert({
         email:      student.email,
@@ -232,7 +229,6 @@ if (studentIds.length > 0) {
           .eq('profile_id', profileData.profile_id)
           .eq('club_id', collab.club_id)
 
-        // Riporta a student se non ha altri club come manager/owner
         const { data: otherClubs } = await supabase
           .from('instructor_clubs')
           .select('id')
@@ -326,7 +322,7 @@ if (studentIds.length > 0) {
                       <div style={{ fontSize: '11px', color: '#e85858' }}>⚠️ Numero WhatsApp non configurato</div>
                     )}
 
-                    {/* Collaboratori */}
+                    {/* Lista collaboratori attivi */}
                     {clubCollabs.length > 0 && (
                       <div style={{ marginTop: '12px' }}>
                         <div style={{ fontSize: '11px', color: textMuted, marginBottom: '6px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -434,18 +430,21 @@ if (studentIds.length > 0) {
             </div>
 
             <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: textSub, marginBottom: '16px', lineHeight: '1.6' }}>
-              💡 Seleziona un alunno già registrato in app per promuoverlo a collaboratore. Potrà gestire lezioni, alunni, notifiche e inviti ma non le impostazioni del club.
+              💡 Seleziona un alunno già registrato in app. Potrà gestire lezioni, alunni, notifiche e inviti ma non le impostazioni del club.
             </div>
 
             {availableStudents.length === 0 ? (
-              <div style={{ background: surface2, border: `1px solid ${border}`, borderRadius: '8px', padding: '16px', textAlign: 'center', fontSize: '13px', color: textMuted, marginBottom: '16px' }}>
+              <div style={{ background: surface2, border: `1px solid ${border}`, borderRadius: '8px', padding: '20px', textAlign: 'center', fontSize: '13px', color: textMuted, marginBottom: '16px' }}>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>👥</div>
                 Nessun alunno registrato disponibile.<br />
                 <span style={{ fontSize: '12px' }}>Solo gli alunni che hanno già creato un account possono diventare collaboratori.</span>
               </div>
             ) : (
               <div style={{ marginBottom: '20px' }}>
                 <label style={labelStyle}>Seleziona alunno *</label>
-                <select value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)}
+                <select
+                  value={selectedStudentId}
+                  onChange={e => setSelectedStudentId(e.target.value)}
                   style={{ ...inputStyle, outline: 'none' }}>
                   <option value="">Scegli un alunno...</option>
                   {availableStudents.map(s => (
@@ -466,8 +465,10 @@ if (studentIds.length > 0) {
                 style={{ flex: 1, padding: '13px', background: 'transparent', border: `1px solid ${border}`, color: textSub, borderRadius: '10px', fontSize: '14px', cursor: 'pointer' }}>
                 Annulla
               </button>
-              <button onClick={handleAddCollab} disabled={savingCollab || availableStudents.length === 0 || !selectedStudentId}
-                style={{ flex: 2, padding: '13px', background: (!selectedStudentId || savingCollab) ? surface2 : pc, border: 'none', color: '#0e1117', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: selectedStudentId && !savingCollab ? 'pointer' : 'not-allowed', opacity: selectedStudentId && !savingCollab ? 1 : 0.5 }}>
+              <button
+                onClick={handleAddCollab}
+                disabled={savingCollab || availableStudents.length === 0 || !selectedStudentId}
+                style={{ flex: 2, padding: '13px', background: selectedStudentId && !savingCollab ? pc : surface2, border: 'none', color: '#0e1117', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: selectedStudentId && !savingCollab ? 'pointer' : 'not-allowed', opacity: selectedStudentId && !savingCollab ? 1 : 0.5 }}>
                 {savingCollab ? 'Aggiunta...' : '+ Aggiungi collaboratore'}
               </button>
             </div>
