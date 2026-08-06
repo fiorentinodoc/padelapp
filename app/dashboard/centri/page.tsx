@@ -123,6 +123,8 @@ export default function CentriPage() {
 
     setAvailableStudents(filtered)
     setShowCollabModal(true)
+    console.log('students trovati:', filtered)
+console.log('club id cercato:', club.id)
   }
 
   async function handleSave() {
@@ -219,27 +221,28 @@ export default function CentriPage() {
     await supabase.from('collaborator_invites').delete().eq('id', collab.id)
 
     if (collab.used) {
-      const { data: profileData } = await supabase
-        .rpc('get_profile_by_email', { user_email: collab.email })
-        .single()
+     const { data: profileData } = await supabase
+  .rpc('get_profile_by_email', { user_email: collab.email })
+  .single()
 
-      if (profileData?.profile_id) {
-        await supabase.from('instructor_clubs')
-          .delete()
-          .eq('profile_id', profileData.profile_id)
-          .eq('club_id', collab.club_id)
+const pd = profileData as any
+if (pd?.profile_id) {
+  await supabase.from('instructor_clubs')
+    .delete()
+    .eq('profile_id', pd.profile_id)
+    .eq('club_id', collab.club_id)
 
-        const { data: otherClubs } = await supabase
-          .from('instructor_clubs')
-          .select('id')
-          .eq('profile_id', profileData.profile_id)
+  const { data: otherClubs } = await supabase
+    .from('instructor_clubs')
+    .select('id')
+    .eq('profile_id', pd.profile_id)
 
-        if (!otherClubs || otherClubs.length === 0) {
-          await supabase.from('profiles')
-            .update({ role: 'student' })
-            .eq('id', profileData.profile_id)
-        }
-      }
+  if (!otherClubs || otherClubs.length === 0) {
+    await supabase.from('profiles')
+      .update({ role: 'student' })
+      .eq('id', pd.profile_id)
+  }
+}
     }
 
     await loadData()
