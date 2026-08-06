@@ -23,6 +23,8 @@ interface Collaborator {
 export default function CentriPage() {
   const [clubs, setClubs] = useState<Club[]>([])
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
+  const [availableStudents, setAvailableStudents] = useState<any[]>([])
+  const [selectedStudentId, setSelectedStudentId] = useState('')
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [showCollabModal, setShowCollabModal] = useState(false)
@@ -35,7 +37,6 @@ export default function CentriPage() {
   const [isMobile, setIsMobile] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
   const [form, setForm] = useState({ name: '', whatsapp_number: '' })
-  const [collabEmail, setCollabEmail] = useState('')
   const { activeClub, refreshClub } = useClub()
   const { bg, surface, surface2, border, text, textSub, textMuted, pc } = useTheme()
   const router = useRouter()
@@ -93,10 +94,26 @@ export default function CentriPage() {
     setShowModal(true)
   }
 
-  function openCollabModal(club: Club) {
+  async function openCollabModal(club: Club) {
     setSelectedClubForCollab(club)
-    setCollabEmail('')
+    setSelectedStudentId('')
     setCollabError('')
+
+    // Carica alunni registrati del club
+    const { data } = await supabase
+      .from('students')
+      .select('id, first_name, last_name, email, profile_id')
+      .eq('club_id', club.id)
+      .not('profile_id', 'is', null)
+      .eq('status', 'active')
+
+    // Filtra chi è già collaboratore
+    const collabEmails = collaborators
+      .filter(c => c.club_id === club.id && c.used)
+      .map(c => c.email)
+
+    const filtered = (data ?? []).filter(s => !collabEmails.includes(s.email))
+    setAvailableStudents(filtered)
     setShowCollabModal(true)
   }
 
@@ -138,7 +155,6 @@ export default function CentriPage() {
         .select().single()
 
       if (clubError) { setError('Errore: ' + clubError.message); setSaving(false); return }
-
       await supabase.from('instructor_clubs').insert({ profile_id: user.id, club_id: newClub.id, role: 'owner' })
     }
 
@@ -149,67 +165,40 @@ export default function CentriPage() {
   }
 
   async function handleAddCollab() {
-    if (!collabEmail || !selectedClubForCollab) { setCollabError('Inserisci l\'email del collaboratore'); return }
+    if (!selectedStudentId || !selectedClubForCollab) { setCollabError('Seleziona un alunno'); return }
     setSavingCollab(true)
     setCollabError('')
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const email = collabEmail.toLowerCase().trim()
+    const student = availableStudents.find(s => s.id === selectedStudentId)
+    if (!student?.profile_id) { setCollabError('Alunno non registrato in app'); setSavingCollab(false); return }
 
-    // Controlla se è già registrato nel sistema
-    const { data: existingProfile } = await supabase
-      .rpc('get_profile_by_email', { user_email: email })
-      .single()
-
-    if (existingProfile?.profile_id) {
-      // È già registrato — aggiungilo direttamente come manager
-      await supabase.from('instructor_clubs')
-        .upsert({
-          profile_id: existingProfile.profile_id,
-          club_id:    selectedClubForCollab.id,
-          role:       'manager'
-        }, { onConflict: 'profile_id,club_id' })
-
-      // Aggiorna il profilo a club_admin se era student
-      if (existingProfile.role === 'student') {
-        await supabase.from('profiles')
-          .update({ role: 'club_admin' })
-          .eq('id', existingProfile.profile_id)
-      }
-
-      // Segna l'invito come usato
-      await supabase.from('collaborator_invites')
-        .upsert({
-          email,
-          club_id:    selectedClubForCollab.id,
-          invited_by: user.id,
-          used:       true
-        }, { onConflict: 'email,club_id' })
-
-      setShowCollabModal(false)
-      await loadData()
-      setSavingCollab(false)
-      alert(`✅ ${email} è stato aggiunto come collaboratore! Può già accedere alla dashboard.`)
-      return
-    }
-
-    // Non è ancora registrato — inserisci invito e manda WhatsApp
-    const { error } = await supabase
-      .from('collaborator_invites')
+    // Aggiunge come manager
+    const { error: icError } = await supabase
+      .from('instructor_clubs')
       .upsert({
-        email,
+        profile_id: student.profile_id,
+        club_id:    selectedClubForCollab.id,
+        role:       'manager'
+      }, { onConflict: 'profile_id,club_id' })
+
+    if (icError) { setCollabError('Errore: ' + icError.message); setSavingCollab(false); return }
+
+    // Promuovi a club_admin
+    await supabase.from('profiles')
+      .update({ role: 'club_admin' })
+      .eq('id', student.profile_id)
+
+    // Segna invito come usato
+    await supabase.from('collaborator_invites')
+      .upsert({
+        email:      student.email,
         club_id:    selectedClubForCollab.id,
         invited_by: user.id,
-        used:       false
+        used:       true
       }, { onConflict: 'email,club_id' })
-
-    if (error) { setCollabError('Errore: ' + error.message); setSavingCollab(false); return }
-
-    const link = 'https://padelapp-zeta.vercel.app/login'
-    const msg  = `Ciao! Sei stato invitato come collaboratore del club *${selectedClubForCollab.name}* su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${email}) per registrarti.`
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
 
     setShowCollabModal(false)
     await loadData()
@@ -232,7 +221,7 @@ export default function CentriPage() {
           .eq('profile_id', profileData.profile_id)
           .eq('club_id', collab.club_id)
 
-        // Riporta a student se non ha altri club
+        // Riporta a student se non ha altri club come manager/owner
         const { data: otherClubs } = await supabase
           .from('instructor_clubs')
           .select('id')
@@ -339,16 +328,6 @@ export default function CentriPage() {
                               <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 8px', borderRadius: '20px', background: c.used ? 'rgba(56,201,122,0.12)' : 'rgba(245,166,35,0.12)', color: c.used ? '#38c97a' : '#f5a623' }}>
                                 {c.used ? '✅ Attivo' : '⏳ In attesa'}
                               </span>
-                              {!c.used && (
-                                <button onClick={() => {
-                                  const link = 'https://padelapp-zeta.vercel.app/login'
-                                  const msg  = `Ciao! Sei stato invitato come collaboratore del club *${club.name}* su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${c.email}) per registrarti.`
-                                  window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-                                }}
-                                  style={{ background: '#25D366', border: 'none', color: '#fff', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', cursor: 'pointer', fontWeight: '700' }}>
-                                  📱
-                                </button>
-                              )}
                               <button onClick={() => handleRevokeCollab(c)}
                                 style={{ background: 'rgba(232,88,88,0.08)', border: '1px solid rgba(232,88,88,0.15)', color: '#e85858', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', cursor: 'pointer' }}>
                                 Revoca
@@ -444,17 +423,28 @@ export default function CentriPage() {
             </div>
 
             <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: textSub, marginBottom: '16px', lineHeight: '1.6' }}>
-              💡 Il collaboratore potrà gestire lezioni, alunni, notifiche e inviti.<br />
-              Non potrà modificare le impostazioni del club.<br />
-              Se è già registrato in app verrà aggiunto immediatamente.
+              💡 Seleziona un alunno già registrato in app per promuoverlo a collaboratore. Potrà gestire lezioni, alunni, notifiche e inviti ma non le impostazioni del club.
             </div>
 
-            <div style={{ marginBottom: '20px' }}>
-              <label style={labelStyle}>Email collaboratore *</label>
-              <input type="email" value={collabEmail}
-                onChange={e => setCollabEmail(e.target.value)}
-                placeholder="collaboratore@email.it" style={inputStyle} />
-            </div>
+            {availableStudents.length === 0 ? (
+              <div style={{ background: surface2, border: `1px solid ${border}`, borderRadius: '8px', padding: '16px', textAlign: 'center', fontSize: '13px', color: textMuted, marginBottom: '16px' }}>
+                Nessun alunno registrato disponibile.<br />
+                <span style={{ fontSize: '12px' }}>Solo gli alunni che hanno già creato un account possono diventare collaboratori.</span>
+              </div>
+            ) : (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={labelStyle}>Seleziona alunno *</label>
+                <select value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)}
+                  style={{ ...inputStyle, outline: 'none' }}>
+                  <option value="">Scegli un alunno...</option>
+                  {availableStudents.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.first_name} {s.last_name} — {s.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {collabError && (
               <div style={{ background: 'rgba(232,88,88,0.1)', border: '1px solid rgba(232,88,88,0.3)', borderRadius: '8px', padding: '10px 12px', color: '#e85858', fontSize: '13px', marginBottom: '16px' }}>{collabError}</div>
@@ -465,8 +455,8 @@ export default function CentriPage() {
                 style={{ flex: 1, padding: '13px', background: 'transparent', border: `1px solid ${border}`, color: textSub, borderRadius: '10px', fontSize: '14px', cursor: 'pointer' }}>
                 Annulla
               </button>
-              <button onClick={handleAddCollab} disabled={savingCollab}
-                style={{ flex: 2, padding: '13px', background: savingCollab ? '#5a7a20' : pc, border: 'none', color: '#0e1117', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: savingCollab ? 'not-allowed' : 'pointer' }}>
+              <button onClick={handleAddCollab} disabled={savingCollab || availableStudents.length === 0 || !selectedStudentId}
+                style={{ flex: 2, padding: '13px', background: (!selectedStudentId || savingCollab) ? surface2 : pc, border: 'none', color: '#0e1117', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: selectedStudentId && !savingCollab ? 'pointer' : 'not-allowed', opacity: selectedStudentId && !savingCollab ? 1 : 0.5 }}>
                 {savingCollab ? 'Aggiunta...' : '+ Aggiungi collaboratore'}
               </button>
             </div>
