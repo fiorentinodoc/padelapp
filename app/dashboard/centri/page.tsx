@@ -99,13 +99,24 @@ export default function CentriPage() {
     setSelectedStudentId('')
     setCollabError('')
 
-    // Carica alunni registrati del club
-    const { data } = await supabase
-      .from('students')
-      .select('id, first_name, last_name, email, profile_id')
-      .eq('club_id', club.id)
-      .not('profile_id', 'is', null)
-      .eq('status', 'active')
+   // Carica alunni registrati del club tramite student_clubs
+const { data: scLinks } = await supabase
+  .from('student_clubs')
+  .select('student_id')
+  .eq('club_id', club.id)
+
+const studentIds = (scLinks ?? []).map((s: any) => s.student_id)
+
+let data: any[] = []
+if (studentIds.length > 0) {
+  const { data: studentsData } = await supabase
+    .from('students')
+    .select('id, first_name, last_name, email, profile_id')
+    .in('id', studentIds)
+    .not('profile_id', 'is', null)
+    .eq('status', 'active')
+  data = studentsData ?? []
+}
 
     // Filtra chi è già collaboratore
     const collabEmails = collaborators
