@@ -12,6 +12,7 @@ interface Student {
   email: string | null
   phone: string | null
   level: string
+  levels: string[] | null
   group_name: string | null
   status: string
   joined_at: string
@@ -23,6 +24,12 @@ interface ClubLocal {
   id: string
   name: string
 }
+
+const LEVEL_OPTIONS = [
+  { value: 'beginner',     label: 'Principiante', color: '#38c97a' },
+  { value: 'intermediate', label: 'Intermedio',   color: '#f5a623' },
+  { value: 'advanced',     label: 'Avanzato',     color: '#e85858' },
+]
 
 export default function AlunniPage() {
   const [students, setStudents] = useState<Student[]>([])
@@ -37,7 +44,7 @@ export default function AlunniPage() {
   const [isMobile, setIsMobile] = useState(false)
   const [form, setForm] = useState({
     first_name: '', last_name: '', email: '',
-    phone: '', level: 'intermediate', group_name: '',
+    phone: '', levels: ['intermediate'] as string[], group_name: '',
     club_ids: [] as string[]
   })
   const { activeClub } = useClub()
@@ -74,6 +81,56 @@ export default function AlunniPage() {
       .select('student_id, club_id')
       .in('club_id', clubIds)
 
+    // Cerca anche alunni con club_id diretto non presenti in student_clubs
+    const { data: directStudents } = await supabase
+      .from('students')
+      .select('id')
+      .in('club_id', clubIds)
+
+    const scStudentIds = new Set((scLinks ?? []).map((s: any) => s.student_id))
+    const directIds = (directStudents ?? [])
+      .map((s: any) => s.id)
+      .filter((id: string) => !scStudentIds.has(id))
+
+    // Sincronizza student_clubs per alunni mancanti
+    if (directIds.length > 0) {
+      const { data: missingStudents } = await supabase
+        .from('students')
+        .select('id, club_id')
+        .in('id', directIds)
+
+      for (const s of missingStudents ?? []) {
+        if (s.club_id) {
+          await supabase.from('student_clubs')
+            .upsert({ student_id: s.id, club_id: s.club_id }, { onConflict: 'student_id,club_id' })
+        }
+      }
+
+      // Ricarica i links aggiornati
+      const { data: updatedLinks } = await supabase
+        .from('student_clubs')
+        .select('student_id, club_id')
+        .in('club_id', clubIds)
+
+      const allStudentIds = [...new Set((updatedLinks ?? []).map((s: any) => s.student_id))]
+      if (allStudentIds.length === 0) { setStudents([]); setLoading(false); return }
+
+      const { data } = await supabase
+        .from('students')
+        .select('*')
+        .in('id', allStudentIds)
+        .order('joined_at', { ascending: false })
+
+      const enriched: Student[] = (data ?? []).map((s: any) => ({
+        ...s,
+        levels: s.levels ?? [s.level],
+        club_ids: (updatedLinks ?? []).filter((l: any) => l.student_id === s.id).map((l: any) => l.club_id)
+      }))
+      setStudents(enriched)
+      setLoading(false)
+      return
+    }
+
     const studentIds = [...new Set((scLinks ?? []).map((s: any) => s.student_id))]
     if (studentIds.length === 0) { setStudents([]); setLoading(false); return }
 
@@ -85,6 +142,7 @@ export default function AlunniPage() {
 
     const enriched: Student[] = (data ?? []).map((s: any) => ({
       ...s,
+      levels: s.levels ?? [s.level],
       club_ids: (scLinks ?? []).filter((l: any) => l.student_id === s.id).map((l: any) => l.club_id)
     }))
 
@@ -95,7 +153,8 @@ export default function AlunniPage() {
   function openNew() {
     setEditingStudent(null)
     setForm({
-      first_name: '', last_name: '', email: '', phone: '', level: 'intermediate', group_name: '',
+      first_name: '', last_name: '', email: '', phone: '',
+      levels: ['intermediate'], group_name: '',
       club_ids: activeClub ? [activeClub.id] : []
     })
     setError('')
@@ -109,7 +168,7 @@ export default function AlunniPage() {
       last_name:  student.last_name,
       email:      student.email ?? '',
       phone:      student.phone ?? '',
-      level:      student.level,
+      levels:     student.levels ?? [student.level],
       group_name: student.group_name ?? '',
       club_ids:   student.club_ids ?? []
     })
@@ -126,21 +185,25 @@ export default function AlunniPage() {
     }))
   }
 
+  function toggleLevel(level: string) {
+    setForm(f => ({
+      ...f,
+      levels: f.levels.includes(level)
+        ? f.levels.length > 1 ? f.levels.filter(l => l !== level) : f.levels
+        : [...f.levels, level]
+    }))
+  }
+
   async function handleSave() {
-    if (!form.first_name || !form.last_name) {
-      setError('Nome e cognome sono obbligatori')
-      return
-    }
-    if (!form.email) {
-      setError('L\'email è obbligatoria per permettere all\'alunno di accedere all\'app')
-      return
-    }
-    if (form.club_ids.length === 0) {
-      setError('Seleziona almeno un centro')
-      return
-    }
+    if (!form.first_name || !form.last_name) { setError('Nome e cognome sono obbligatori'); return }
+    if (!form.email) { setError('L\'email è obbligatoria per permettere all\'alunno di accedere all\'app'); return }
+    if (form.club_ids.length === 0) { setError('Seleziona almeno un centro'); return }
+    if (form.levels.length === 0) { setError('Seleziona almeno un livello'); return }
     setSaving(true)
     setError('')
+
+    // Livello principale = primo selezionato
+    const primaryLevel = form.levels[0]
 
     if (editingStudent) {
       const { error: updateError } = await supabase
@@ -150,7 +213,8 @@ export default function AlunniPage() {
           last_name:  form.last_name,
           email:      form.email,
           phone:      form.phone || null,
-          level:      form.level,
+          level:      primaryLevel,
+          levels:     form.levels,
           group_name: form.group_name || null,
         })
         .eq('id', editingStudent.id)
@@ -162,10 +226,8 @@ export default function AlunniPage() {
       const toAdd    = form.club_ids.filter(id => !currentIds.includes(id))
 
       if (toRemove.length > 0) {
-        await supabase.from('student_clubs')
-          .delete()
-          .eq('student_id', editingStudent.id)
-          .in('club_id', toRemove)
+        await supabase.from('student_clubs').delete()
+          .eq('student_id', editingStudent.id).in('club_id', toRemove)
       }
       if (toAdd.length > 0) {
         await supabase.from('student_clubs').insert(
@@ -173,24 +235,13 @@ export default function AlunniPage() {
         )
       }
     } else {
-      // Controlla che l'email non sia già usata da un altro alunno
       const { data: existingByEmail } = await supabase
-        .from('students')
-        .select('id')
-        .eq('email', form.email)
-        .maybeSingle()
+        .from('students').select('id').eq('email', form.email).maybeSingle()
 
-      if (existingByEmail) {
-        setError('Esiste già un alunno con questa email')
-        setSaving(false)
-        return
-      }
+      if (existingByEmail) { setError('Esiste già un alunno con questa email'); setSaving(false); return }
 
       const { data: clubData } = await supabase
-        .from('clubs')
-        .select('plan')
-        .eq('id', form.club_ids[0])
-        .single()
+        .from('clubs').select('plan').eq('id', form.club_ids[0]).single()
 
       const planLimits: Record<string, number> = { free: 10, starter: 100, pro: 99999 }
       const maxStudents = planLimits[clubData?.plan ?? 'free']
@@ -213,12 +264,12 @@ export default function AlunniPage() {
           last_name:  form.last_name,
           email:      form.email,
           phone:      form.phone || null,
-          level:      form.level,
+          level:      primaryLevel,
+          levels:     form.levels,
           group_name: form.group_name || null,
           status:     'active'
         })
-        .select()
-        .single()
+        .select().single()
 
       if (studentError) { setError('Errore: ' + studentError.message); setSaving(false); return }
 
@@ -238,37 +289,26 @@ export default function AlunniPage() {
     const newStatus = student.status === 'active' ? 'paused' : 'active'
     await supabase.from('students').update({ status: newStatus }).eq('id', student.id)
     await loadData()
-    
   }
+
   async function handleDeleteStudent(student: Student) {
-  if (!confirm(`Eliminare definitivamente ${student.first_name} ${student.last_name}?\n\nVerranno rimosse anche tutte le sue prenotazioni.`)) return
-  await supabase.from('bookings').delete().eq('student_id', student.id)
-  await supabase.from('student_clubs').delete().eq('student_id', student.id)
-  await supabase.from('students').delete().eq('id', student.id)
-  await loadData()
-}
+    if (!confirm(`Eliminare definitivamente ${student.first_name} ${student.last_name}?\n\nVerranno rimosse anche tutte le sue prenotazioni.`)) return
+    await supabase.from('bookings').delete().eq('student_id', student.id)
+    await supabase.from('student_clubs').delete().eq('student_id', student.id)
+    await supabase.from('students').delete().eq('id', student.id)
+    await loadData()
+  }
 
   function sendInvite(student: Student) {
-  if (!student.email) {
-    alert('Questo alunno non ha un\'email salvata')
-    return
-  }
-  const link = 'https://padelapp-zeta.vercel.app/login'
-  const msg  = `Ciao ${student.first_name}! Ti aspettiamo su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${student.email}) per registrarti — verrai collegato automaticamente.`
-
-  if (student.phone) {
-    const cleaned = student.phone.replace(/\s+/g, '').replace(/[^\d+]/g, '')
-    window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(msg)}`, '_blank')
-  } else {
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-  }
-}
-
-  const levelLabel: Record<string, string> = {
-    beginner: 'Principiante', intermediate: 'Intermedio', advanced: 'Avanzato'
-  }
-  const levelColor: Record<string, string> = {
-    beginner: '#f5a623', intermediate: '#5b7fff', advanced: '#38c97a'
+    if (!student.email) { alert('Questo alunno non ha un\'email salvata'); return }
+    const link = 'https://padelapp-zeta.vercel.app/login'
+    const msg  = `Ciao ${student.first_name}! Ti aspettiamo su Remate 🎾\n\nRegistrati qui: ${link}\n\nUsa questa email (${student.email}) per registrarti — verrai collegato automaticamente.`
+    if (student.phone) {
+      const cleaned = student.phone.replace(/\s+/g, '').replace(/[^\d+]/g, '')
+      window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(msg)}`, '_blank')
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+    }
   }
 
   const clubNameMap: Record<string, string> = {}
@@ -312,6 +352,7 @@ export default function AlunniPage() {
         </button>
       </div>
 
+      {/* Filtri stato */}
       <div style={{ display: 'flex', gap: '4px', background: surface2, padding: '4px', borderRadius: '10px', width: 'fit-content', marginBottom: '14px' }}>
         {[
           { value: 'all',    label: 'Tutti' },
@@ -325,6 +366,7 @@ export default function AlunniPage() {
         ))}
       </div>
 
+      {/* Filtro centri */}
       {clubs.length > 1 && (
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
           <div onClick={() => setClubFilter('all')}
@@ -351,76 +393,88 @@ export default function AlunniPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {filtered.map(student => (
-            <div key={student.id} style={{ background: student.status === 'paused' ? (isMobile ? surface2 : `${surface2}80`) : surface, border: `1px solid ${student.status === 'paused' ? border : border}`, borderRadius: '14px', padding: '16px', opacity: student.status === 'paused' ? 0.6 : 1 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: '200px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                    <div style={{ fontWeight: '700', fontSize: '15px', color: text }}>{student.first_name} {student.last_name}</div>
-                    {student.profile_id ? (
-                      <span style={{ background: 'rgba(56,201,122,0.12)', color: '#38c97a', padding: '2px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: '700' }}>
-                        ✓ App attiva
-                      </span>
-                    ) : (
-                      <span style={{ background: 'rgba(245,166,35,0.12)', color: '#f5a623', padding: '2px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: '700' }}>
-                        Non registrato
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                    <span style={{ background: `${levelColor[student.level]}18`, color: levelColor[student.level], border: `1px solid ${levelColor[student.level]}40`, padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700' }}>
-                      {levelLabel[student.level]}
-                    </span>
-                    {student.group_name && (
-                      <span style={{ background: surface2, color: textSub, padding: '2px 10px', borderRadius: '20px', fontSize: '11px' }}>
-                        {student.group_name}
-                      </span>
-                    )}
-                    <span style={{ background: student.status === 'active' ? 'rgba(56,201,122,0.12)' : surface2, color: student.status === 'active' ? '#38c97a' : textSub, padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700' }}>
-                      {student.status === 'active' ? 'Attivo' : 'In pausa'}
-                    </span>
-                  </div>
-
-                  {clubs.length > 1 && (student.club_ids?.length ?? 0) > 0 && (
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                      {student.club_ids!.map(cid => (
-                        <span key={cid} style={{ background: 'rgba(91,127,255,0.1)', color: '#5b7fff', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: '600' }}>
-                          🏟️ {clubNameMap[cid] ?? '...'}
+          {filtered.map(student => {
+            const studentLevels = student.levels ?? [student.level]
+            return (
+              <div key={student.id} style={{ background: student.status === 'paused' ? `${surface2}80` : surface, border: `1px solid ${border}`, borderRadius: '14px', padding: '16px', opacity: student.status === 'paused' ? 0.6 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '200px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                      <div style={{ fontWeight: '700', fontSize: '15px', color: text }}>{student.first_name} {student.last_name}</div>
+                      {student.profile_id ? (
+                        <span style={{ background: 'rgba(56,201,122,0.12)', color: '#38c97a', padding: '2px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: '700' }}>
+                          ✓ App attiva
                         </span>
-                      ))}
+                      ) : (
+                        <span style={{ background: 'rgba(245,166,35,0.12)', color: '#f5a623', padding: '2px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: '700' }}>
+                          Non registrato
+                        </span>
+                      )}
                     </div>
-                  )}
 
-                  {(student.email || student.phone) && (
-                    <div style={{ fontSize: '12px', color: textMuted }}>
-                      {student.email && <div>{student.email}</div>}
-                      {student.phone && <div>{student.phone}</div>}
+                    {/* Badge livelli */}
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                      {studentLevels.map(lvl => {
+                        const lo = LEVEL_OPTIONS.find(o => o.value === lvl)
+                        return lo ? (
+                          <span key={lvl} style={{ background: `${lo.color}18`, color: lo.color, border: `1px solid ${lo.color}40`, padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700' }}>
+                            {lo.label}
+                          </span>
+                        ) : null
+                      })}
+                      {student.group_name && (
+                        <span style={{ background: surface2, color: textSub, padding: '2px 10px', borderRadius: '20px', fontSize: '11px' }}>
+                          {student.group_name}
+                        </span>
+                      )}
+                      <span style={{ background: student.status === 'active' ? 'rgba(56,201,122,0.12)' : surface2, color: student.status === 'active' ? '#38c97a' : textSub, padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700' }}>
+                        {student.status === 'active' ? 'Attivo' : 'In pausa'}
+                      </span>
                     </div>
-                  )}
-                </div>
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '6px', flexShrink: 0 }}>
-                  {!student.profile_id && (
-                    <button onClick={() => sendInvite(student)}
-                      style={{ background: '#25D366', border: 'none', color: '#fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '700', whiteSpace: 'nowrap' }}>
-                      📱 Manda invito
+
+                    {/* Centri */}
+                    {clubs.length > 1 && (student.club_ids?.length ?? 0) > 0 && (
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                        {student.club_ids!.map(cid => (
+                          <span key={cid} style={{ background: 'rgba(91,127,255,0.1)', color: '#5b7fff', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: '600' }}>
+                            🏟️ {clubNameMap[cid] ?? '...'}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {(student.email || student.phone) && (
+                      <div style={{ fontSize: '12px', color: textMuted }}>
+                        {student.email && <div>{student.email}</div>}
+                        {student.phone && <div>{student.phone}</div>}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '6px', flexShrink: 0 }}>
+                    {!student.profile_id && (
+                      <button onClick={() => sendInvite(student)}
+                        style={{ background: '#25D366', border: 'none', color: '#fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                        📱 Manda invito
+                      </button>
+                    )}
+                    <button onClick={() => openEdit(student)}
+                      style={{ background: 'rgba(91,127,255,0.1)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                      ✏️ Modifica
                     </button>
-                  )}
-                  <button onClick={() => openEdit(student)}
-                    style={{ background: 'rgba(91,127,255,0.1)', border: '1px solid rgba(91,127,255,0.2)', color: '#5b7fff', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>
-                    ✏️ Modifica
-                  </button>
-                 <button onClick={() => toggleStatus(student)}
-  style={{ background: student.status === 'active' ? 'rgba(245,166,35,0.1)' : 'rgba(56,201,122,0.1)', border: `1px solid ${student.status === 'active' ? 'rgba(245,166,35,0.2)' : 'rgba(56,201,122,0.2)'}`, color: student.status === 'active' ? '#f5a623' : '#38c97a', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: '600' }}>
-  {student.status === 'active' ? '⏸ Pausa' : '▶ Riattiva'}
-</button>
-<button onClick={() => handleDeleteStudent(student)}
-  style={{ background: 'rgba(232,88,88,0.08)', border: '1px solid rgba(232,88,88,0.15)', color: '#e85858', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-  🗑️ Elimina
-</button>
+                    <button onClick={() => toggleStatus(student)}
+                      style={{ background: student.status === 'active' ? 'rgba(245,166,35,0.1)' : 'rgba(56,201,122,0.1)', border: `1px solid ${student.status === 'active' ? 'rgba(245,166,35,0.2)' : 'rgba(56,201,122,0.2)'}`, color: student.status === 'active' ? '#f5a623' : '#38c97a', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: '600' }}>
+                      {student.status === 'active' ? '⏸ Pausa' : '▶ Riattiva'}
+                    </button>
+                    <button onClick={() => handleDeleteStudent(student)}
+                      style={{ background: 'rgba(232,88,88,0.08)', border: '1px solid rgba(232,88,88,0.15)', color: '#e85858', padding: '7px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      🗑️ Elimina
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -436,6 +490,7 @@ export default function AlunniPage() {
               {editingStudent ? `${editingStudent.first_name} ${editingStudent.last_name}` : 'Inserisci i dati del nuovo alunno'}
             </div>
 
+            {/* Selezione centri */}
             {clubs.length > 1 && (
               <div style={{ marginBottom: '16px' }}>
                 <label style={labelStyle}>Centro/i *</label>
@@ -456,6 +511,7 @@ export default function AlunniPage() {
               </div>
             )}
 
+            {/* Nome e cognome */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
               {[
                 { label: 'Nome *', key: 'first_name', placeholder: 'Marco' },
@@ -469,38 +525,54 @@ export default function AlunniPage() {
               ))}
             </div>
 
+            {/* Email */}
             <div style={{ marginBottom: '14px' }}>
               <label style={labelStyle}>Email * <span style={{ color: textMuted, fontWeight: '400', textTransform: 'none' }}>(serve per l'accesso all'app)</span></label>
               <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
                 placeholder="marco@email.it" style={inputStyle} />
             </div>
 
-            <div style={{ marginBottom: '14px' }}>
+            {/* Telefono */}
+            <div style={{ marginBottom: '16px' }}>
               <label style={labelStyle}>Telefono</label>
               <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
                 placeholder="+39 333 1234567" style={inputStyle} />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
-              <div>
-                <label style={labelStyle}>Livello</label>
-                <select value={form.level} onChange={e => setForm({ ...form, level: e.target.value })}
-                  style={{ ...inputStyle, outline: 'none' }}>
-                  <option value="beginner">Principiante</option>
-                  <option value="intermediate">Intermedio</option>
-                  <option value="advanced">Avanzato</option>
-                </select>
+            {/* Livelli — checkbox multipli */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={labelStyle}>Livello/i *</label>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {LEVEL_OPTIONS.map(opt => {
+                  const checked = form.levels.includes(opt.value)
+                  return (
+                    <div key={opt.value} onClick={() => toggleLevel(opt.value)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '8px', background: checked ? `${opt.color}15` : surface2, border: `1.5px solid ${checked ? opt.color : border}`, borderRadius: '8px', padding: '8px 14px', cursor: 'pointer' }}>
+                      <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: `2px solid ${checked ? opt.color : textMuted}`, background: checked ? opt.color : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {checked && <span style={{ color: '#fff', fontSize: '10px', fontWeight: '900' }}>✓</span>}
+                      </div>
+                      <span style={{ fontSize: '13px', color: checked ? opt.color : text, fontWeight: checked ? '700' : '400' }}>{opt.label}</span>
+                    </div>
+                  )
+                })}
               </div>
-              <div>
-                <label style={labelStyle}>Gruppo</label>
-                <input value={form.group_name} onChange={e => setForm({ ...form, group_name: e.target.value })}
-                  placeholder="Es: Gruppo B" style={inputStyle} />
-              </div>
+              {form.levels.length > 1 && (
+                <div style={{ fontSize: '11px', color: textMuted, marginTop: '6px' }}>
+                  ℹ️ L'alunno vedrà le lezioni di tutti i livelli selezionati
+                </div>
+              )}
+            </div>
+
+            {/* Gruppo */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={labelStyle}>Gruppo</label>
+              <input value={form.group_name} onChange={e => setForm({ ...form, group_name: e.target.value })}
+                placeholder="Es: Gruppo B" style={inputStyle} />
             </div>
 
             {!editingStudent && (
               <div style={{ background: 'rgba(91,127,255,0.08)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: textSub, marginBottom: '16px', lineHeight: '1.5' }}>
-                💡 Dopo averlo aggiunto potrai mandargli l'invito via WhatsApp con il bottone "📱 Manda invito" — si registrerà con questa email e verrà collegato automaticamente.
+                💡 Dopo averlo aggiunto potrai mandargli l'invito via WhatsApp — si registrerà con questa email e verrà collegato automaticamente.
               </div>
             )}
 
